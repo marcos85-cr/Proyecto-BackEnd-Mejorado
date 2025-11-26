@@ -1,6 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using SistemaBancaEnLinea.BC.Entidades;
-using SistemaBancaEnLinea.DA;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -9,7 +8,7 @@ namespace SistemaBancaEnLinea.BW.Servicios
 {
     public class UsuarioServicio : IUsuarioServicio
     {
-        private readonly BancaContext _context;
+        
 
         public UsuarioServicio(BancaContext context)
         {

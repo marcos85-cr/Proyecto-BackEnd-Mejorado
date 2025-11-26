@@ -7,7 +7,17 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.11" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\SistemaBancaEnLinea.BC\SistemaBancaEnLinea.BC.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="CU\" />
+    <Folder Include="Interfaces\BW\" />
+    <Folder Include="Interfaces\DA\" />
   </ItemGroup>
 
 </Project>

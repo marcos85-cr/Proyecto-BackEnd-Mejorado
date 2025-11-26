@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using SistemaBancaEnLinea.DA;
 using SistemaBancaEnLinea.BW.Servicios;
 
 var builder = WebApplication.CreateBuilder(args);
