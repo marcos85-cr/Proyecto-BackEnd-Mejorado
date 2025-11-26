@@ -1,5 +1,4 @@
-﻿using SistemaBancaEnLinea.BC.Entidades;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace SistemaBancaEnLinea.BC.Modelos
 {
