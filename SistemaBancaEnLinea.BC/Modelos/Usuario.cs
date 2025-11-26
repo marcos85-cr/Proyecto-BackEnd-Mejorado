@@ -1,6 +1,7 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using SistemaBancaEnLinea.BC.Entidades;
+using System.ComponentModel.DataAnnotations;
 
-namespace SistemaBancaEnLinea.BC.Entidades
+namespace SistemaBancaEnLinea.BC.Modelos
 {
     public class Usuario
     {
@@ -8,15 +9,15 @@ namespace SistemaBancaEnLinea.BC.Entidades
 
         // RF-A1: Email único y válido
         [Required, EmailAddress]
-        public string Email { get; set; }
+        public string Email { get; set; } = string.Empty;
 
         // RF-A1: Contraseña hasheada
         [Required]
-        public string PasswordHash { get; set; }
+        public string PasswordHash { get; set; } = string.Empty;
 
         // RF-A1: Rol {Administrador, Gestor, Cliente}
         [Required]
-        public string Rol { get; set; }
+        public string Rol { get; set; } = string.Empty;
 
         // RF-A2: Control de intentos fallidos
         public int IntentosFallidos { get; set; } = 0;

@@ -1,14 +1,16 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using SistemaBancaEnLinea.BC.Entidades;
+using SistemaBancaEnLinea.BC.Modelos;
+using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.DA;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace SistemaBancaEnLinea.BW.Servicios
+namespace SistemaBancaEnLinea.BW
 {
     public class UsuarioServicio : IUsuarioServicio
     {
-        
+        private readonly BancaContext _context;
 
         public UsuarioServicio(BancaContext context)
         {
@@ -22,7 +24,7 @@ namespace SistemaBancaEnLinea.BW.Servicios
             if (await _context.Usuarios.AnyAsync(u => u.Email == email))
                 throw new InvalidOperationException("El correo electrónico ya está registrado.");
 
-            // Validar formato de contraseña: mínimo 8 caracteres, 1 mayúscula, 1 número, 1 símbolo
+            // Validar formato de contraseña
             if (!ValidarPassword(password))
                 throw new InvalidOperationException("La contraseña debe tener mínimo 8 caracteres, incluir al menos 1 mayúscula, 1 número y 1 símbolo.");
 
@@ -60,7 +62,7 @@ namespace SistemaBancaEnLinea.BW.Servicios
                 if (usuario.FechaBloqueo.HasValue &&
                     DateTime.UtcNow < usuario.FechaBloqueo.Value.AddMinutes(15))
                 {
-                    var minutosRestantes = (usuario.FechaBloqueo.Value.AddMinutes(15) - DateTime.UtcNow).Minutes;
+                    var minutosRestantes = (int)(usuario.FechaBloqueo.Value.AddMinutes(15) - DateTime.UtcNow).TotalMinutes;
                     return (false, null, $"Cuenta bloqueada. Intente en {minutosRestantes} minutos.");
                 }
                 else
@@ -94,7 +96,7 @@ namespace SistemaBancaEnLinea.BW.Servicios
             usuario.IntentosFallidos = 0;
             await _context.SaveChangesAsync();
 
-            // Aquí se generaría el JWT Token (se implementará después)
+            // Generar token
             var token = GenerarToken(usuario);
 
             return (true, token, null);
@@ -113,13 +115,14 @@ namespace SistemaBancaEnLinea.BW.Servicios
             return true;
         }
 
-        // Helpers
+        // === MÉTODOS PRIVADOS (HELPERS) ===
+
         private bool ValidarPassword(string password)
         {
             if (password.Length < 8) return false;
-            if (!Regex.IsMatch(password, @"[A-Z]")) return false; // Al menos 1 mayúscula
-            if (!Regex.IsMatch(password, @"[0-9]")) return false; // Al menos 1 número
-            if (!Regex.IsMatch(password, @"[!@#$%^&*(),.?""{}|<>]")) return false; // Al menos 1 símbolo
+            if (!Regex.IsMatch(password, @"[A-Z]")) return false;
+            if (!Regex.IsMatch(password, @"[0-9]")) return false;
+            if (!Regex.IsMatch(password, @"[!@#$%^&*(),.?""{}|<>]")) return false;
             return true;
         }
 

@@ -1,5 +1,4 @@
-﻿using SistemaBancaEnLinea.BC.Entidades;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace SistemaBancaEnLinea.BC.Modelos
 {
@@ -8,21 +7,21 @@ namespace SistemaBancaEnLinea.BC.Modelos
         public int Id { get; set; }
 
         [Required]
-        public DateTime FechaHora { get; set; } = DateTime.Now;
+        public DateTime FechaHora { get; set; } = DateTime.UtcNow;
 
-        // RF-G2: Tipo de operación (Creación de usuarios, apertura de cuentas, etc.)
+        // RF-G2: Tipo de operación
         [Required]
-        public string TipoOperacion { get; set; }
+        public string TipoOperacion { get; set; } = string.Empty;
 
-        // Detalle de la acción (e.g., "Se aprobó la transferencia #12345")
+        // Detalle de la acción
         [Required]
-        public string Descripcion { get; set; }
+        public string Descripcion { get; set; } = string.Empty;
 
-        // Identificador del usuario que realizó la acción
+        // Usuario que realizó la acción
         public int UsuarioId { get; set; }
-        public Usuario Usuario { get; set; }
+        public Usuario Usuario { get; set; } = null!;
 
-        // Puede usarse para guardar el estado del objeto antes del cambio
-        public string DetalleJson { get; set; }
+        // Estado del objeto antes del cambio (JSON)
+        public string? DetalleJson { get; set; }
     }
 }

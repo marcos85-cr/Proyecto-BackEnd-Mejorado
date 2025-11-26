@@ -1,6 +1,6 @@
-﻿using SistemaBancaEnLinea.BC.Entidades;
+﻿using SistemaBancaEnLinea.BC.Modelos;
 
-namespace SistemaBancaEnLinea.BW.Servicios
+namespace SistemaBancaEnLinea.BW.Interfaces.BW
 {
     public interface IUsuarioServicio
     {

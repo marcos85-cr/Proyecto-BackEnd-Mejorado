@@ -1,5 +1,4 @@
-﻿using SistemaBancaEnLinea.BC.Entidades;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace SistemaBancaEnLinea.BC.Modelos
 {
@@ -9,14 +8,14 @@ namespace SistemaBancaEnLinea.BC.Modelos
 
         // RF-E1: Nombre del proveedor
         [Required]
-        public string Nombre { get; set; }
+        public string Nombre { get; set; } = string.Empty;
 
-        // RF-E1: Regla de validación del número de contrato (e.g., Regex string)
+        // RF-E1: Regla de validación del número de contrato (Regex)
         [Required]
-        public string ReglaValidacionContrato { get; set; }
+        public string ReglaValidacionContrato { get; set; } = string.Empty;
 
-        // FK al Administrador que lo creó (opcional para trazabilidad)
+        // FK al Administrador que lo creó
         public int CreadoPorUsuarioId { get; set; }
-        public Usuario CreadoPor { get; set; }
+        public Usuario CreadoPor { get; set; } = null!;
     }
 }

@@ -1,5 +1,4 @@
-﻿using SistemaBancaEnLinea.BC.Entidades;
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace SistemaBancaEnLinea.BC.Modelos
@@ -10,12 +9,11 @@ namespace SistemaBancaEnLinea.BC.Modelos
 
         // RF-F1: Tipo (Transferencia, PagoServicio)
         [Required]
-        public string Tipo { get; set; }
+        public string Tipo { get; set; } = string.Empty;
 
         // RF-D4: Estados posibles
-        // PendienteAprobacion, Programada, Exitosa, Fallida, Cancelada, Rechazada
         [Required]
-        public string Estado { get; set; }
+        public string Estado { get; set; } = string.Empty;
 
         // Monto de la transacción (debe ser > 0)
         [Required]
@@ -24,7 +22,7 @@ namespace SistemaBancaEnLinea.BC.Modelos
 
         // Moneda de la transacción (CRC, USD)
         [Required]
-        public string Moneda { get; set; }
+        public string Moneda { get; set; } = string.Empty;
 
         // Monto de la comisión aplicada
         [Column(TypeName = "decimal(18, 2)")]
@@ -32,13 +30,13 @@ namespace SistemaBancaEnLinea.BC.Modelos
 
         // RF-D2: Cabecera Idempotency-Key para evitar duplicados
         [Required, MaxLength(50)]
-        public string IdempotencyKey { get; set; }
+        public string IdempotencyKey { get; set; } = string.Empty;
 
         // Fecha en que se creó la transacción
         [Required]
         public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
 
-        // Fecha en que se ejecutó (puede ser null si está programada o pendiente)
+        // Fecha en que se ejecutó
         public DateTime? FechaEjecucion { get; set; }
 
         // RF-F3: Número de referencia único del comprobante
@@ -46,8 +44,6 @@ namespace SistemaBancaEnLinea.BC.Modelos
 
         // Descripción o concepto de la transacción
         public string? Descripcion { get; set; }
-
-        // --- Saldos para el extracto (RF-F2) ---
 
         // Saldo antes de la transacción
         [Column(TypeName = "decimal(18, 2)")]
@@ -57,41 +53,37 @@ namespace SistemaBancaEnLinea.BC.Modelos
         [Column(TypeName = "decimal(18, 2)")]
         public decimal SaldoPosterior { get; set; }
 
-        // --- Relaciones de Origen ---
+        // --- Relaciones ---
 
-        // Cuenta Origen (FK)
+        // Cuenta Origen (FK) - Obligatoria
         [Required]
         public int CuentaOrigenId { get; set; }
-        public Cuenta CuentaOrigen { get; set; }
+        public Cuenta CuentaOrigen { get; set; } = null!;
 
-        // --- Relaciones de Destino ---
-
-        // Para transferencias a cuenta propia o de terceros
+        // Cuenta Destino (para transferencias propias)
         public int? CuentaDestinoId { get; set; }
         public Cuenta? CuentaDestino { get; set; }
 
-        // Para transferencias a terceros (beneficiarios)
+        // Beneficiario (para transferencias a terceros)
         public int? BeneficiarioId { get; set; }
         public Beneficiario? Beneficiario { get; set; }
 
-        // Para pagos de servicios
+        // Proveedor de Servicio (para pagos)
         public int? ProveedorServicioId { get; set; }
         public ProveedorServicio? ProveedorServicio { get; set; }
 
         // Número de contrato para pagos de servicios (RF-E2)
         public string? NumeroContrato { get; set; }
 
-        // Detalle adicional del destino (JSON o texto descriptivo)
+        // Detalle adicional del destino
         public string? DetalleDestino { get; set; }
 
-        // --- Relación con Cliente ---
-
-        // FK al cliente que realiza la transacción
+        // Cliente que realiza la transacción
         [Required]
         public int ClienteId { get; set; }
-        public Cliente Cliente { get; set; }
+        public Cliente Cliente { get; set; } = null!;
 
-        // --- Relación con Programación (RF-D3, RF-E3) ---
+        // Programación (RF-D3, RF-E3)
         public Programacion? Programacion { get; set; }
     }
 }
