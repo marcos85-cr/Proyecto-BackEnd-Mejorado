@@ -1,7 +1,8 @@
 using Microsoft.EntityFrameworkCore;
-using SistemaBancaEnLinea.DA;
 using SistemaBancaEnLinea.BW;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.DA;
+using SistemaBancaEnLinea.DA.Acciones;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -13,8 +14,19 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddDbContext<BancaContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
+
+// Registrar servicios de negocio (Inyección de Dependencias)
+builder.Services.AddScoped<IClienteServicio, ClienteServicio>();
+builder.Services.AddScoped<ClienteServicio>();
+
 // Registrar servicios de negocio (Inyección de Dependencias)
 builder.Services.AddScoped<IUsuarioServicio, UsuarioServicio>();
+
+// Registrar acciones de datos
+builder.Services.AddScoped<UsuarioAcciones>();
+builder.Services.AddScoped<ClienteAcciones>();
+builder.Services.AddScoped<CuentaAcciones>();
+builder.Services.AddScoped<AuditoriaAcciones>();
 
 // Configurar controladores
 builder.Services.AddControllers();
