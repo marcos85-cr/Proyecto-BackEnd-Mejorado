@@ -1,0 +1,38 @@
+﻿using SistemaBancaEnLinea.BC.Modelos;
+
+namespace SistemaBancaEnLinea.BW.Interfaces.BW
+{
+    public interface ITransferenciasServicio
+    {
+        Task<TransferPrecheck> PreCheckTransferenciaAsync(TransferRequest request);
+        Task<Transaccion> EjecutarTransferenciaAsync(TransferRequest request);
+        Task<List<Transaccion>> ObtenerMisTransaccionesAsync(int clienteId);
+        Task<Transaccion?> ObtenerTransaccionAsync(int id);
+        Task<byte[]> DescargarComprobanteAsync(int transaccionId);
+    }
+
+    public class TransferRequest
+    {
+        public int CuentaOrigenId { get; set; }
+        public int? CuentaDestinoId { get; set; }
+        public int? BeneficiarioId { get; set; }
+        public decimal Monto { get; set; }
+        public string? Descripcion { get; set; }
+        public bool Programada { get; set; }
+        public DateTime? FechaProgramada { get; set; }
+        public string IdempotencyKey { get; set; } = string.Empty;
+    }
+
+    public class TransferPrecheck
+    {
+        public bool PuedeEjecutar { get; set; }
+        public bool RequiereAprobacion { get; set; }
+        public decimal SaldoAntes { get; set; }
+        public decimal Monto { get; set; }
+        public decimal Comision { get; set; }
+        public decimal MontoTotal { get; set; }
+        public decimal SaldoDespues { get; set; }
+        public decimal LimiteDisponible { get; set; }
+        public string? Mensaje { get; set; }
+    }
+}
