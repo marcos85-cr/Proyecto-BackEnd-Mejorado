@@ -523,51 +523,8 @@ namespace SistemaBancaEnLinea.BW
                 .ToListAsync();
         }
 
-        /// <summary>
-        /// Obtiene operaciones realizadas hoy de clientes específicos
-        /// </summary>
-        public async Task<List<Transaccion>> ObtenerOperacionesDeHoyPorClientesAsync(List<int> clienteIds)
-        {
-            var hoy = DateTime.UtcNow.Date;
-            return await _context.Transacciones
-                .Where(t => clienteIds.Contains(t.ClienteId) && t.FechaCreacion.Date == hoy)
-                .ToListAsync();
-        }
-
-        /// <summary>
-        /// Obtiene transacciones con filtros avanzados
-        /// </summary>
-        public async Task<List<Transaccion>> ObtenerTransaccionesConFiltrosAsync(
-            int clienteId,
-            DateTime? fechaInicio,
-            DateTime? fechaFin,
-            string? tipo,
-            string? estado)
-        {
-            var query = _context.Transacciones
-                .Include(t => t.CuentaOrigen)
-                .Include(t => t.CuentaDestino)
-                .Include(t => t.Beneficiario)
-                .Include(t => t.ProveedorServicio)
-                .Where(t => t.ClienteId == clienteId);
-
-            if (fechaInicio.HasValue)
-                query = query.Where(t => t.FechaCreacion >= fechaInicio.Value);
-
-            if (fechaFin.HasValue)
-                query = query.Where(t => t.FechaCreacion <= fechaFin.Value);
-
-            if (!string.IsNullOrEmpty(tipo))
-                query = query.Where(t => t.Tipo == tipo);
-
-            if (!string.IsNullOrEmpty(estado))
-                query = query.Where(t => t.Estado == estado);
-
-            return await query
-                .OrderByDescending(t => t.FechaCreacion)
-                .ToListAsync();
-        }
-
+     
+        
         #endregion
 
         #region ========== MÉTODOS PRIVADOS ==========
