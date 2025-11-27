@@ -19,11 +19,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             _cuentaServicio = cuentaServicio;
             _logger = logger;
         }
-
-        /// <summary>
-        /// GET: api/accounts/my-accounts
-        /// Obtiene todas las cuentas del cliente actual
-        /// </summary>
+        
         [HttpGet("my-accounts")]
         public async Task<IActionResult> GetMyAccounts()
         {
