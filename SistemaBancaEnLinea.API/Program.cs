@@ -174,5 +174,38 @@ using (var scope = app.Services.CreateScope())
         logger.LogError(ex, "Error al crear/migrar la base de datos");
     }
 }
+// ========== INICIALIZAR BASE DE DATOS Y DATOS DE PRUEBA ==========
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
+
+    try
+    {
+        var context = services.GetRequiredService<BancaContext>();
+
+        // Crear la base de datos si no existe
+        logger.LogInformation("Verificando base de datos...");
+
+        if (context.Database.EnsureCreated())
+        {
+            logger.LogInformation("Base de datos creada exitosamente.");
+        }
+        else
+        {
+            logger.LogInformation("Base de datos ya existe.");
+        }
+
+        // Ejecutar seed de datos
+        logger.LogInformation("Ejecutando seed de datos...");
+        await SeedData.InitializeAsync(context);
+        logger.LogInformation("Seed de datos completado.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error al inicializar la base de datos");
+        throw; // Re-lanzar para ver el error completo
+    }
+}
 
 app.Run();
