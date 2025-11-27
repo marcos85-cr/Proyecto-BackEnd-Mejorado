@@ -617,11 +617,11 @@ namespace SistemaBancaEnLinea.BW
 
             await _context.SaveChangesAsync();
 
-            await _auditoriaServicio.RegistrarAsync(
+          /*  await _auditoriaServicio.RegistrarAsync(
                 clienteId,
                 "CancelacionTransferencia",
                 $"Transferencia {transaccionId} cancelada"
-            );
+            );*/
 
             return true;
         }
