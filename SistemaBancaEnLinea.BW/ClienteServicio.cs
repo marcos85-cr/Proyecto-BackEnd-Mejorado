@@ -1,6 +1,8 @@
-﻿using SistemaBancaEnLinea.BC.Modelos;
+﻿using Microsoft.EntityFrameworkCore;
+using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.DA.Acciones;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.DA;
 
 namespace SistemaBancaEnLinea.BW
 {
@@ -8,11 +10,16 @@ namespace SistemaBancaEnLinea.BW
     {
         private readonly ClienteAcciones _clienteAcciones;
         private readonly AuditoriaAcciones _auditoriaAcciones;
+        private readonly BancaContext _context;
 
-        public ClienteServicio(ClienteAcciones clienteAcciones, AuditoriaAcciones auditoriaAcciones)
+        public ClienteServicio(
+            ClienteAcciones clienteAcciones,
+            AuditoriaAcciones auditoriaAcciones,
+            BancaContext context)
         {
             _clienteAcciones = clienteAcciones;
             _auditoriaAcciones = auditoriaAcciones;
+            _context = context;
         }
 
         public async Task<Cliente> CrearClienteAsync(Cliente cliente)
@@ -33,6 +40,16 @@ namespace SistemaBancaEnLinea.BW
 
             var clienteCreado = await _clienteAcciones.CrearAsync(cliente);
 
+            // Actualizar la relación Usuario -> Cliente
+            if (cliente.UsuarioAsociado != null)
+            {
+                cliente.UsuarioAsociado.ClienteId = clienteCreado.Id;
+                cliente.UsuarioAsociado.Nombre = cliente.NombreCompleto;
+                cliente.UsuarioAsociado.Identificacion = cliente.Identificacion;
+                cliente.UsuarioAsociado.Telefono = cliente.Telefono;
+                await _context.SaveChangesAsync();
+            }
+
             // Registrar en auditoría
             await _auditoriaAcciones.RegistrarAsync(
                 cliente.UsuarioAsociado?.Id ?? 0,
@@ -50,8 +67,10 @@ namespace SistemaBancaEnLinea.BW
 
         public async Task<Cliente?> ObtenerPorUsuarioAsync(int usuarioId)
         {
-            var clientes = await _clienteAcciones.ObtenerTodosAsync();
-            return clientes.FirstOrDefault(c => c.UsuarioAsociado?.Id == usuarioId);
+            return await _context.Clientes
+                .Include(c => c.Cuentas)
+                .Include(c => c.Beneficiarios)
+                .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuarioId);
         }
 
         public async Task<Cliente?> ObtenerPorIdentificacionAsync(string identificacion)
@@ -83,6 +102,11 @@ namespace SistemaBancaEnLinea.BW
         public async Task<bool> ExisteIdentificacionAsync(string identificacion)
         {
             return await _clienteAcciones.ExisteIdentificacionAsync(identificacion);
+        }
+
+        public async Task<List<Cliente>> ObtenerTodosAsync()
+        {
+            return await _clienteAcciones.ObtenerTodosAsync();
         }
     }
 }

@@ -24,7 +24,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         }
 
         /// <summary>
-        /// RF-A3: Obtener perfil del cliente
+        /// RF-A3: Obtener perfil del cliente por ID
         /// </summary>
         [HttpGet("{id}")]
         public async Task<IActionResult> ObtenerCliente(int id)
@@ -35,6 +35,8 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cliente == null)
                     return NotFound(new { success = false, message = "Cliente no encontrado." });
 
+                var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(id);
+
                 return Ok(new
                 {
                     success = true,
@@ -42,13 +44,15 @@ namespace SistemaBancaEnLinea.API.Controllers
                     {
                         id = cliente.Id,
                         identificacion = cliente.Identificacion,
+                        nombre = cliente.NombreCompleto,
                         nombreCompleto = cliente.NombreCompleto,
                         telefono = cliente.Telefono,
                         correo = cliente.Correo,
                         estado = cliente.Estado,
                         fechaRegistro = cliente.FechaRegistro,
                         ultimaOperacion = cliente.UltimaOperacion,
-                        cuentasActivas = cliente.Cuentas?.Count(c => c.Estado == "Activa") ?? 0
+                        cuentasActivas = cuentas.Count(c => c.Estado == "Activa"),
+                        saldoTotal = cuentas.Where(c => c.Estado == "Activa").Sum(c => c.Saldo)
                     }
                 });
             }
@@ -75,6 +79,8 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cliente == null)
                     return NotFound(new { success = false, message = "Cliente no encontrado." });
 
+                var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(clienteId);
+
                 return Ok(new
                 {
                     success = true,
@@ -82,11 +88,15 @@ namespace SistemaBancaEnLinea.API.Controllers
                     {
                         id = cliente.Id,
                         identificacion = cliente.Identificacion,
+                        nombre = cliente.NombreCompleto,
                         nombreCompleto = cliente.NombreCompleto,
                         telefono = cliente.Telefono,
                         correo = cliente.Correo,
                         estado = cliente.Estado,
-                        fechaRegistro = cliente.FechaRegistro
+                        fechaRegistro = cliente.FechaRegistro,
+                        ultimaOperacion = cliente.UltimaOperacion,
+                        cuentasActivas = cuentas.Count(c => c.Estado == "Activa"),
+                        saldoTotal = cuentas.Where(c => c.Estado == "Activa").Sum(c => c.Saldo)
                     }
                 });
             }
@@ -125,6 +135,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     data = new
                     {
                         id = clienteActualizado.Id,
+                        nombre = clienteActualizado.NombreCompleto,
                         nombreCompleto = clienteActualizado.NombreCompleto,
                         telefono = clienteActualizado.Telefono,
                         correo = clienteActualizado.Correo
@@ -134,6 +145,26 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (InvalidOperationException ex)
             {
                 return BadRequest(new { success = false, message = ex.Message });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { success = false, message = ex.Message });
+            }
+        }
+
+        /// <summary>
+        /// Actualizar mi perfil
+        /// </summary>
+        [HttpPut("mi-perfil")]
+        public async Task<IActionResult> ActualizarMiPerfil([FromBody] ActualizarClienteRequest request)
+        {
+            try
+            {
+                var clienteId = GetClienteIdFromToken();
+                if (clienteId == 0)
+                    return Unauthorized(new { success = false, message = "Cliente no identificado." });
+
+                return await ActualizarCliente(clienteId, request);
             }
             catch (Exception ex)
             {
@@ -199,12 +230,22 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                // Este método necesitaría implementarse en el servicio
-                // Por ahora retornamos una lista vacía o implementamos la lógica aquí
+                var clientes = await _clienteServicio.ObtenerTodosAsync();
+
                 return Ok(new
                 {
                     success = true,
-                    data = new List<object>() // Implementar cuando se agregue el método al servicio
+                    data = clientes.Select(c => new
+                    {
+                        id = c.Id,
+                        identificacion = c.Identificacion,
+                        nombreCompleto = c.NombreCompleto,
+                        telefono = c.Telefono,
+                        correo = c.Correo,
+                        estado = c.Estado,
+                        fechaRegistro = c.FechaRegistro,
+                        cuentasActivas = c.Cuentas?.Count(cu => cu.Estado == "Activa") ?? 0
+                    })
                 });
             }
             catch (Exception ex)
@@ -223,6 +264,7 @@ namespace SistemaBancaEnLinea.API.Controllers
     public class ActualizarClienteRequest
     {
         public string? NombreCompleto { get; set; }
+        public string? Nombre { get; set; }
         public string? Telefono { get; set; }
         public string? Correo { get; set; }
     }

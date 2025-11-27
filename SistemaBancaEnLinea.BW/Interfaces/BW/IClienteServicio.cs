@@ -10,5 +10,6 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
         Task<Cliente?> ObtenerPorIdentificacionAsync(string identificacion);
         Task<Cliente> ActualizarClienteAsync(Cliente cliente);
         Task<bool> ExisteIdentificacionAsync(string identificacion);
+        Task<List<Cliente>> ObtenerTodosAsync();
     }
 }

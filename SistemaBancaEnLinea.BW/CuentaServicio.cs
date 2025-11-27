@@ -26,13 +26,22 @@ namespace SistemaBancaEnLinea.BW
         }
 
         /// <summary>
-        /// Obtiene todas las cuentas del cliente
+        /// Obtiene todas las cuentas del cliente con información del cliente
         /// </summary>
         public async Task<List<Cuenta>> ObtenerMisCuentasAsync(int clienteId)
         {
             try
             {
-                return await _cuentaAcciones.ObtenerPorClienteAsync(clienteId);
+                var cuentas = await _cuentaAcciones.ObtenerPorClienteAsync(clienteId);
+
+                // Cargar información del cliente para cada cuenta
+                var cliente = await _clienteAcciones.ObtenerPorIdAsync(clienteId);
+                foreach (var cuenta in cuentas)
+                {
+                    cuenta.Cliente = cliente!;
+                }
+
+                return cuentas;
             }
             catch (Exception ex)
             {
@@ -98,7 +107,8 @@ namespace SistemaBancaEnLinea.BW
                     Saldo = saldoInicial,
                     Estado = "Activa",
                     ClienteId = clienteId,
-                    FechaApertura = DateTime.UtcNow
+                    FechaApertura = DateTime.UtcNow,
+                    Cliente = cliente
                 };
 
                 var cuentaCreada = await _cuentaAcciones.CrearAsync(cuenta);
@@ -138,7 +148,7 @@ namespace SistemaBancaEnLinea.BW
                 await _cuentaAcciones.ActualizarAsync(cuenta);
 
                 await _auditoriaAcciones.RegistrarAsync(
-                    0,
+                    cuenta.ClienteId,
                     "BloqueoCuenta",
                     $"Cuenta {cuenta.Numero} bloqueada"
                 );
@@ -170,7 +180,7 @@ namespace SistemaBancaEnLinea.BW
                 await _cuentaAcciones.ActualizarAsync(cuenta);
 
                 await _auditoriaAcciones.RegistrarAsync(
-                    0,
+                    cuenta.ClienteId,
                     "CierreCuenta",
                     $"Cuenta {cuenta.Numero} cerrada"
                 );

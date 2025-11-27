@@ -13,11 +13,22 @@ var builder = WebApplication.CreateBuilder(args);
 
 // ========== CONFIGURACIÓN DE SERVICIOS ==========
 
-// Configuración de Entity Framework con SQL Server
+// 1. Configurar DbContext
 builder.Services.AddDbContext<BancaContext>(options =>
     options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Configuración de JWT Authentication
+// 2. Configurar CORS para permitir el frontend
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowAll", policy =>
+    {
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader();
+    });
+});
+
+// 3. Configurar Autenticación JWT
 var jwtKey = builder.Configuration["Jwt:Key"] ?? "TuClaveSecretaMuyLargaYSegura1234567890!@#$%";
 var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "SistemaBancaEnLinea";
 var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "SistemaBancaEnLinea";
@@ -44,17 +55,17 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// ========== REGISTRO DE ACCIONES (Data Access) ==========
+// 4. Registrar Acciones (Capa de Datos)
 builder.Services.AddScoped<UsuarioAcciones>();
 builder.Services.AddScoped<ClienteAcciones>();
 builder.Services.AddScoped<CuentaAcciones>();
 builder.Services.AddScoped<BeneficiarioAcciones>();
 builder.Services.AddScoped<TransaccionAcciones>();
-builder.Services.AddScoped<AuditoriaAcciones>();
-builder.Services.AddScoped<ProveedorServicioAcciones>();
 builder.Services.AddScoped<ProgramacionAcciones>();
+builder.Services.AddScoped<ProveedorServicioAcciones>();
+builder.Services.AddScoped<AuditoriaAcciones>();
 
-// ========== REGISTRO DE SERVICIOS (Business Logic) ==========
+// 5. Registrar Servicios (Capa de Negocio)
 builder.Services.AddScoped<IUsuarioServicio, UsuarioServicio>();
 builder.Services.AddScoped<IClienteServicio, ClienteServicio>();
 builder.Services.AddScoped<ICuentaServicio, CuentaServicio>();
@@ -62,29 +73,23 @@ builder.Services.AddScoped<IBeneficiarioServicio, BeneficiarioServicio>();
 builder.Services.AddScoped<ITransferenciasServicio, TransferenciasServicio>();
 builder.Services.AddScoped<IPagosServiciosServicio, PagosServiciosServicio>();
 builder.Services.AddScoped<IProgramacionServicio, ProgramacionServicio>();
-builder.Services.AddScoped<IAuditoriaServicio, AuditoriaServicio>();
 builder.Services.AddScoped<IProveedorServicioServicio, ProveedorServicioServicio>();
+builder.Services.AddScoped<IAuditoriaServicio, AuditoriaServicio>();
 
-// ========== REGISTRO DE CASOS DE USO ==========
+// 6. Registrar Casos de Uso
 builder.Services.AddScoped<GestionCuentasCU>();
 builder.Services.AddScoped<GestionUsuariosCU>();
 builder.Services.AddScoped<TransferenciasCU>();
 
-// ========== CONFIGURACIÓN DE CONTROLLERS ==========
-builder.Services.AddControllers();
-
-// ========== CONFIGURACIÓN DE CORS ==========
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll", policy =>
+// 7. Configurar Controllers
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+        options.JsonSerializerOptions.WriteIndented = true;
     });
-});
 
-// ========== CONFIGURACIÓN DE SWAGGER ==========
+// 8. Configurar Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -95,10 +100,10 @@ builder.Services.AddSwaggerGen(c =>
         Description = "API para el sistema de banca en línea"
     });
 
-    // Configuración de autenticación JWT en Swagger
+    // Configurar autenticación en Swagger
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Description = "JWT Authorization header. Ejemplo: 'Bearer {token}'",
+        Description = "JWT Authorization header usando el esquema Bearer. Ejemplo: \"Bearer {token}\"",
         Name = "Authorization",
         In = ParameterLocation.Header,
         Type = SecuritySchemeType.ApiKey,
@@ -119,47 +124,54 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
-
-    // Incluir comentarios XML
-    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
-    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
-    if (File.Exists(xmlPath))
-    {
-        c.IncludeXmlComments(xmlPath);
-    }
 });
+
+// 9. Configurar Logging
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
 
 var app = builder.Build();
 
 // ========== CONFIGURACIÓN DEL PIPELINE ==========
 
+// Configurar el pipeline de solicitudes HTTP
 if (app.Environment.IsDevelopment())
 {
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Banca en Línea API v1");
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sistema Banca en Línea API v1");
+        c.RoutePrefix = "swagger";
     });
 }
 
-app.UseHttpsRedirection();
+// Habilitar CORS
 app.UseCors("AllowAll");
+
+// Habilitar HTTPS redirection (opcional en desarrollo)
+// app.UseHttpsRedirection();
+
+// Autenticación y Autorización
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Mapear controladores
 app.MapControllers();
 
-// ========== INICIALIZACIÓN DE BASE DE DATOS ==========
+// Crear base de datos si no existe (solo en desarrollo)
 using (var scope = app.Services.CreateScope())
 {
     var context = scope.ServiceProvider.GetRequiredService<BancaContext>();
     try
     {
         context.Database.EnsureCreated();
+        // O usar migraciones: context.Database.Migrate();
     }
     catch (Exception ex)
     {
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "Error al inicializar la base de datos");
+        logger.LogError(ex, "Error al crear/migrar la base de datos");
     }
 }
 

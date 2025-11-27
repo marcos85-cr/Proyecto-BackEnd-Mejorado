@@ -4,17 +4,14 @@ using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.DA;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
 using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.BW
 {
-    
     public class UsuarioServicio : IUsuarioServicio
     {
         private readonly BancaContext _context;
-        // La clave JWT en un entorno real debe ser leída desde configuración
-        private const string JWT_SECRET = "mock-jwt-secret-key-2025";
+        private const string JWT_SECRET = "TuClaveSecretaMuyLargaYSegura1234567890!@#$%";
         private const int TOKEN_EXPIRATION_SECONDS = 20 * 60; // 20 minutos
 
         public UsuarioServicio(BancaContext context)
@@ -46,7 +43,8 @@ namespace SistemaBancaEnLinea.BW
                 PasswordHash = HashPassword(password),
                 Rol = rol,
                 IntentosFallidos = 0,
-                EstaBloqueado = false
+                EstaBloqueado = false,
+                FechaCreacion = DateTime.UtcNow
             };
 
             _context.Usuarios.Add(usuario);
@@ -60,7 +58,9 @@ namespace SistemaBancaEnLinea.BW
         /// </summary>
         public async Task<ResultadoLogin> IniciarSesionAsync(string email, string password)
         {
-            var usuario = await _context.Usuarios.FirstOrDefaultAsync(u => u.Email == email);
+            var usuario = await _context.Usuarios
+                .Include(u => u.ClienteAsociado)
+                .FirstOrDefaultAsync(u => u.Email == email);
 
             if (usuario == null)
                 return new ResultadoLogin
@@ -127,8 +127,25 @@ namespace SistemaBancaEnLinea.BW
             usuario.IntentosFallidos = 0;
             await _context.SaveChangesAsync();
 
-            // Generar token JWT
-            var token = GenerarToken(usuario);
+            // Obtener el clienteId si existe
+            int? clienteId = null;
+            if (usuario.Rol == "Cliente")
+            {
+                var cliente = await _context.Clientes
+                    .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuario.Id);
+                clienteId = cliente?.Id;
+            }
+
+            // Generar token JWT con clienteId
+            var token = GenerarToken(usuario, clienteId);
+
+            // Actualizar información del usuario con datos del cliente si existe
+            if (usuario.ClienteAsociado != null)
+            {
+                usuario.Nombre = usuario.ClienteAsociado.NombreCompleto;
+                usuario.Identificacion = usuario.ClienteAsociado.Identificacion;
+                usuario.Telefono = usuario.ClienteAsociado.Telefono;
+            }
 
             return new ResultadoLogin
             {
@@ -167,8 +184,9 @@ namespace SistemaBancaEnLinea.BW
         /// </summary>
         public async Task<Usuario?> ObtenerPorIdAsync(int id)
         {
-            // Nota: FindAsync es más eficiente para buscar por la PK
-            return await _context.Usuarios.FindAsync(id);
+            return await _context.Usuarios
+                .Include(u => u.ClienteAsociado)
+                .FirstOrDefaultAsync(u => u.Id == id);
         }
 
         /// <summary>
@@ -176,92 +194,19 @@ namespace SistemaBancaEnLinea.BW
         /// </summary>
         public async Task<Usuario?> ObtenerPorEmailAsync(string email)
         {
-            return await _context.Usuarios.FirstOrDefaultAsync(u => u.Email == email);
+            return await _context.Usuarios
+                .Include(u => u.ClienteAsociado)
+                .FirstOrDefaultAsync(u => u.Email == email);
         }
 
-        // ========== MÉTODOS PRIVADOS ==========
-
-        /// <summary>
-        /// Genera un JWT token mock con expiración de 20 minutos
-        /// </summary>
-        private string GenerarToken(Usuario usuario)
-        {
-            try
-            {
-                var header = new { alg = "HS256", typ = "JWT" };
-                var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var exp = now + TOKEN_EXPIRATION_SECONDS;
-
-                var payload = new
-                {
-                    sub = usuario.Id.ToString(),
-                    email = usuario.Email,
-                    role = usuario.Rol,
-                    // Usar Email como nombre por defecto si no hay un campo 'Nombre' directo en Usuario
-                    nombre = usuario.Email,
-                    iat = now,
-                    exp = exp
-                };
-
-                // Serializar a JSON y luego a Base64 URL Safe
-                var base64Header = Convert.ToBase64String(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(header)))
-                                          .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-                var base64Payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(payload)))
-                                           .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-
-                // Generación de firma mock (No es una firma HMAC real con la clave secreta)
-                // En un proyecto real, se usaría una biblioteca JWT como System.IdentityModel.Tokens.Jwt
-                using var hmac = new System.Security.Cryptography.HMACSHA256(Encoding.UTF8.GetBytes(JWT_SECRET));
-                var input = Encoding.UTF8.GetBytes($"{base64Header}.{base64Payload}");
-                var hash = hmac.ComputeHash(input);
-                var signature = Convert.ToBase64String(hash)
-                                        .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-
-                var token = $"{base64Header}.{base64Payload}.{signature}";
-                return token;
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException("Error al generar token JWT", ex);
-            }
-        }
-
-        /// <summary>
-        /// Valida formato de contraseña
-        /// </summary>
-        private bool ValidarPassword(string password)
-        {
-            // Reutiliza la lógica de reglas de negocio
-            return AutenticacionReglas.ValidarFormatoPassword(password);
-        }
-
-        /// <summary>
-        /// Hash de contraseña usando SHA256 (Hash simple para fines de ejemplo)
-        ///
-        /// </summary>
-        private string HashPassword(string password)
-        {
-            using var sha256 = SHA256.Create();
-            var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-            return Convert.ToBase64String(bytes);
-        }
-
-        /// <summary>
-        /// Verifica contraseña
-        /// </summary>
-        private bool VerificarPassword(string password, string hash)
-        {
-            var hashOfInput = HashPassword(password);
-            return hashOfInput == hash;
-        }
-
-        
         /// <summary>
         /// Obtiene todos los usuarios
         /// </summary>
         public async Task<List<Usuario>> ObtenerTodosAsync()
         {
-            return await _context.Usuarios.ToListAsync();
+            return await _context.Usuarios
+                .Include(u => u.ClienteAsociado)
+                .ToListAsync();
         }
 
         /// <summary>
@@ -271,6 +216,7 @@ namespace SistemaBancaEnLinea.BW
         {
             return await _context.Usuarios
                 .Where(u => u.Rol == rol)
+                .Include(u => u.ClienteAsociado)
                 .ToListAsync();
         }
 
@@ -291,8 +237,74 @@ namespace SistemaBancaEnLinea.BW
             return existente;
         }
 
+        // ========== MÉTODOS PRIVADOS ==========
 
+        /// <summary>
+        /// Genera un JWT token con expiración de 20 minutos
+        /// </summary>
+        private string GenerarToken(Usuario usuario, int? clienteId = null)
+        {
+            try
+            {
+                var header = new { alg = "HS256", typ = "JWT" };
+                var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                var exp = now + TOKEN_EXPIRATION_SECONDS;
 
+                var payload = new Dictionary<string, object>
+                {
+                    { "sub", usuario.Id.ToString() },
+                    { "email", usuario.Email },
+                    { "role", usuario.Rol },
+                    { "nombre", usuario.Nombre ?? usuario.Email },
+                    { "iat", now },
+                    { "exp", exp }
+                };
 
+                // Agregar client_id si es un cliente
+                if (clienteId.HasValue)
+                {
+                    payload.Add("client_id", clienteId.Value.ToString());
+                }
+
+                var base64Header = Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(header)))
+                    .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+                var base64Payload = Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(payload)))
+                    .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+                using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(JWT_SECRET));
+                var input = Encoding.UTF8.GetBytes($"{base64Header}.{base64Payload}");
+                var hash = hmac.ComputeHash(input);
+                var signature = Convert.ToBase64String(hash)
+                    .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+                return $"{base64Header}.{base64Payload}.{signature}";
+            }
+            catch (Exception ex)
+            {
+                throw new InvalidOperationException("Error al generar token JWT", ex);
+            }
+        }
+
+        /// <summary>
+        /// Hash de contraseña usando SHA256
+        /// </summary>
+        private string HashPassword(string password)
+        {
+            using var sha256 = SHA256.Create();
+            var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+            return Convert.ToBase64String(bytes);
+        }
+
+        /// <summary>
+        /// Verifica contraseña
+        /// </summary>
+        private bool VerificarPassword(string password, string hash)
+        {
+            var hashOfInput = HashPassword(password);
+            return hashOfInput == hash;
+        }
     }
 }
