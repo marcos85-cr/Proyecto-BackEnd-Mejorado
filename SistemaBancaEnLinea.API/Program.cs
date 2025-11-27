@@ -143,7 +143,7 @@ app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sistema Banca API v1");
-    c.RoutePrefix = string.Empty; // Swagger en la raíz
+    c.RoutePrefix = "swagger"; // Swagger en la raíz
 });
 
 // Aplicar migraciones y seed data automáticamente
@@ -181,8 +181,8 @@ app.MapControllers();
 
 Console.WriteLine("========================================");
 Console.WriteLine(" API Sistema Banca en Línea INICIADA");
-Console.WriteLine($" Swagger UI: https://localhost:7271");
-Console.WriteLine($" Swagger UI: http://localhost:5085");
+Console.WriteLine($" Swagger UI: https://localhost:7500");
+Console.WriteLine($" Swagger UI: http://localhost:5500");
 Console.WriteLine("========================================");
 
 app.Run();
