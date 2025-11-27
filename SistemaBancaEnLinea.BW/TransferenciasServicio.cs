@@ -490,7 +490,7 @@ namespace SistemaBancaEnLinea.BW
                 .ToListAsync();
         }
 
-       
+
 
         /// <summary>
         /// Obtiene operaciones de clientes asignados a un gestor
@@ -523,8 +523,8 @@ namespace SistemaBancaEnLinea.BW
                 .ToListAsync();
         }
 
-     
-        
+
+
         #endregion
 
         #region ========== MÉTODOS PRIVADOS ==========
@@ -538,5 +538,104 @@ namespace SistemaBancaEnLinea.BW
         }
 
         #endregion
+
+
+
+        // Agregar al final de la clase TransferenciasServicio, antes del cierre
+
+        /// <summary>
+        /// Obtiene el historial completo de una cuenta específica
+        /// </summary>
+        public async Task<List<Transaccion>> ObtenerHistorialCuentaAsync(int cuentaId)
+        {
+            return await _context.Transacciones
+                .Include(t => t.CuentaOrigen)
+                .Include(t => t.CuentaDestino)
+                .Include(t => t.Beneficiario)
+                .Include(t => t.ProveedorServicio)
+                .Where(t => t.CuentaOrigenId == cuentaId || t.CuentaDestinoId == cuentaId)
+                .OrderByDescending(t => t.FechaCreacion)
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene estadísticas de transacciones para un periodo
+        /// </summary>
+        public async Task<TransaccionesEstadisticas> ObtenerEstadisticasAsync(
+            int clienteId,
+            DateTime fechaInicio,
+            DateTime fechaFin)
+        {
+            var transacciones = await _context.Transacciones
+                .Where(t => t.ClienteId == clienteId &&
+                           t.FechaCreacion >= fechaInicio &&
+                           t.FechaCreacion <= fechaFin)
+                .ToListAsync();
+
+            return new TransaccionesEstadisticas
+            {
+                TotalTransacciones = transacciones.Count,
+                TransaccionesExitosas = transacciones.Count(t => t.Estado == "Exitosa"),
+                TransaccionesPendientes = transacciones.Count(t => t.Estado == "PendienteAprobacion"),
+                TransaccionesFallidas = transacciones.Count(t => t.Estado == "Fallida"),
+                MontoTotalTransferido = transacciones
+                    .Where(t => t.Estado == "Exitosa" && t.Tipo == "Transferencia")
+                    .Sum(t => t.Monto),
+                MontoTotalPagos = transacciones
+                    .Where(t => t.Estado == "Exitosa" && t.Tipo == "PagoServicio")
+                    .Sum(t => t.Monto),
+                ComisionesTotales = transacciones
+                    .Where(t => t.Estado == "Exitosa")
+                    .Sum(t => t.Comision)
+            };
+        }
+
+        /// <summary>
+        /// Cancela una transferencia programada
+        /// </summary>
+        public async Task<bool> CancelarTransferenciaProgramadaAsync(int transaccionId, int clienteId)
+        {
+            var transaccion = await _context.Transacciones
+                .Include(t => t.Programacion)
+                .FirstOrDefaultAsync(t => t.Id == transaccionId);
+
+            if (transaccion == null || transaccion.ClienteId != clienteId)
+                return false;
+
+            if (transaccion.Estado != "Programada")
+                throw new InvalidOperationException("Solo se pueden cancelar transferencias programadas.");
+
+            if (transaccion.Programacion == null)
+                return false;
+
+            if (!ProgramacionReglas.PuedeCancelarse(transaccion.Programacion.FechaProgramada))
+                throw new InvalidOperationException(
+                    "No se puede cancelar una transferencia con menos de 24 horas de anticipación.");
+
+            transaccion.Estado = "Cancelada";
+            transaccion.Programacion.EstadoJob = "Cancelado";
+
+            await _context.SaveChangesAsync();
+
+            await _auditoriaServicio.RegistrarAsync(
+                clienteId,
+                "CancelacionTransferencia",
+                $"Transferencia {transaccionId} cancelada"
+            );
+
+            return true;
+        }
+
+        // Agregar esta clase al final del archivo, fuera de la clase TransferenciasServicio
+        public class TransaccionesEstadisticas
+        {
+            public int TotalTransacciones { get; set; }
+            public int TransaccionesExitosas { get; set; }
+            public int TransaccionesPendientes { get; set; }
+            public int TransaccionesFallidas { get; set; }
+            public decimal MontoTotalTransferido { get; set; }
+            public decimal MontoTotalPagos { get; set; }
+            public decimal ComisionesTotales { get; set; }
+        }
     }
 }

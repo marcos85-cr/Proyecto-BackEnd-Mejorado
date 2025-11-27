@@ -1,4 +1,5 @@
 ﻿using SistemaBancaEnLinea.BC.Modelos;
+using static SistemaBancaEnLinea.BW.TransferenciasServicio;
 
 namespace SistemaBancaEnLinea.BW.Interfaces.BW
 {
@@ -18,11 +19,17 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
         Task<List<Transaccion>> ObtenerOperacionesPendientesPorGestorAsync(int gestorId);
         Task<List<Transaccion>> ObtenerTransaccionesFiltradasAsync(int clienteId, DateTime? fechaInicio, DateTime? fechaFin, string? tipo, string? estado);
 
-        // NUEVOS métodos faltantes
+        // Métodos para Administrador
         Task<List<Transaccion>> ObtenerOperacionesPorClientesAsync(List<int> clienteIds);
         Task<List<Transaccion>> ObtenerOperacionesPendientesPorClientesAsync(List<int> clienteIds);
         Task<List<Transaccion>> ObtenerOperacionesDeHoyPorClientesAsync(List<int> clienteIds);
         Task<List<Transaccion>> ObtenerTransaccionesConFiltrosAsync(int clienteId, DateTime? fechaInicio, DateTime? fechaFin, string? tipo, string? estado);
+
+        // Otros métodos 
+
+        Task<List<Transaccion>> ObtenerHistorialCuentaAsync(int cuentaId);
+        Task<TransaccionesEstadisticas> ObtenerEstadisticasAsync(int clienteId, DateTime fechaInicio, DateTime fechaFin);
+        Task<bool> CancelarTransferenciaProgramadaAsync(int transaccionId, int clienteId);
     }
 
     public class TransferRequest
