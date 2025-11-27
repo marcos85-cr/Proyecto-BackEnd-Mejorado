@@ -37,7 +37,8 @@ namespace SistemaBancaEnLinea.API.Controllers
                     {
                         id = p.Id,
                         nombre = p.Nombre,
-                        reglaValidacion = p.ReglaValidacionContrato
+                        reglaValidacion = p.ReglaValidacionContrato,
+                        reglaValidacionContrato = p.ReglaValidacionContrato
                     })
                 });
             }
@@ -56,6 +57,12 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
+                if (request.ProveedorId <= 0)
+                    return BadRequest(new { success = false, message = "ID de proveedor inválido" });
+
+                if (string.IsNullOrWhiteSpace(request.NumeroContrato))
+                    return BadRequest(new { success = false, message = "Número de contrato requerido" });
+
                 var esValido = await _pagosServicio.ValidarNumeroContratoAsync(
                     request.ProveedorId,
                     request.NumeroContrato);
@@ -74,6 +81,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
             catch (Exception ex)
             {
+                _logger.LogError($"Error validando contrato: {ex.Message}");
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
         }
@@ -88,9 +96,27 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
+                // Validaciones básicas
+                if (request.CuentaOrigenId <= 0)
+                    return BadRequest(new { success = false, message = "Cuenta origen inválida" });
+
+                if (request.ProveedorServicioId <= 0)
+                    return BadRequest(new { success = false, message = "Proveedor inválido" });
+
+                if (string.IsNullOrWhiteSpace(request.NumeroContrato))
+                    return BadRequest(new { success = false, message = "Número de contrato requerido" });
+
+                if (request.Monto <= 0)
+                    return BadRequest(new { success = false, message = "Monto inválido" });
+
+                // Obtener cliente actual
                 var clienteId = GetClienteIdFromToken();
                 if (clienteId == 0)
                     return Unauthorized(new { success = false, message = "Cliente no identificado." });
+
+                // Generar idempotency key si no viene
+                if (string.IsNullOrWhiteSpace(idempotencyKey))
+                    idempotencyKey = Guid.NewGuid().ToString();
 
                 var pagoRequest = new PagoServicioRequest
                 {
@@ -100,7 +126,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     NumeroContrato = request.NumeroContrato,
                     Monto = request.Monto,
                     Descripcion = request.Descripcion,
-                    IdempotencyKey = idempotencyKey ?? Guid.NewGuid().ToString()
+                    IdempotencyKey = idempotencyKey
                 };
 
                 var transaccion = await _pagosServicio.RealizarPagoAsync(pagoRequest);
@@ -115,8 +141,11 @@ namespace SistemaBancaEnLinea.API.Controllers
                         comprobanteReferencia = transaccion.ComprobanteReferencia,
                         monto = transaccion.Monto,
                         comision = transaccion.Comision,
+                        montoTotal = transaccion.Monto + transaccion.Comision,
                         estado = transaccion.Estado,
-                        fechaEjecucion = transaccion.FechaEjecucion
+                        fechaEjecucion = transaccion.FechaEjecucion,
+                        proveedor = transaccion.ProveedorServicio?.Nombre,
+                        numeroContrato = transaccion.NumeroContrato
                     }
                 });
             }
@@ -127,7 +156,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError($"Error realizando pago: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                return StatusCode(500, new { success = false, message = "Error interno al procesar el pago" });
             }
         }
 
@@ -141,9 +170,28 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
+                // Validaciones
+                if (request.CuentaOrigenId <= 0)
+                    return BadRequest(new { success = false, message = "Cuenta origen inválida" });
+
+                if (request.ProveedorServicioId <= 0)
+                    return BadRequest(new { success = false, message = "Proveedor inválido" });
+
+                if (string.IsNullOrWhiteSpace(request.NumeroContrato))
+                    return BadRequest(new { success = false, message = "Número de contrato requerido" });
+
+                if (request.Monto <= 0)
+                    return BadRequest(new { success = false, message = "Monto inválido" });
+
+                if (request.FechaProgramada <= DateTime.UtcNow)
+                    return BadRequest(new { success = false, message = "La fecha debe ser futura" });
+
                 var clienteId = GetClienteIdFromToken();
                 if (clienteId == 0)
                     return Unauthorized(new { success = false, message = "Cliente no identificado." });
+
+                if (string.IsNullOrWhiteSpace(idempotencyKey))
+                    idempotencyKey = Guid.NewGuid().ToString();
 
                 var pagoRequest = new PagoServicioRequest
                 {
@@ -154,7 +202,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     Monto = request.Monto,
                     Descripcion = request.Descripcion,
                     FechaProgramada = request.FechaProgramada,
-                    IdempotencyKey = idempotencyKey ?? Guid.NewGuid().ToString()
+                    IdempotencyKey = idempotencyKey
                 };
 
                 var transaccion = await _pagosServicio.ProgramarPagoAsync(pagoRequest);
@@ -167,7 +215,10 @@ namespace SistemaBancaEnLinea.API.Controllers
                     {
                         transaccionId = transaccion.Id,
                         estado = transaccion.Estado,
-                        fechaProgramada = request.FechaProgramada
+                        fechaProgramada = request.FechaProgramada,
+                        monto = transaccion.Monto,
+                        comision = transaccion.Comision,
+                        proveedor = transaccion.ProveedorServicio?.Nombre
                     }
                 });
             }
@@ -178,7 +229,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError($"Error programando pago: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                return StatusCode(500, new { success = false, message = "Error interno al programar el pago" });
             }
         }
 
@@ -190,11 +241,38 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                // Usar el servicio de transferencias para obtener la transacción
-                return Ok(new { success = true, message = "Implementar usando ITransferenciasServicio" });
+                var clienteId = GetClienteIdFromToken();
+                if (clienteId == 0)
+                    return Unauthorized(new { success = false, message = "Cliente no identificado." });
+
+                var pagos = await _pagosServicio.ObtenerHistorialPagosAsync(clienteId);
+                var pago = pagos.FirstOrDefault(p => p.Id == id);
+
+                if (pago == null)
+                    return NotFound(new { success = false, message = "Pago no encontrado" });
+
+                return Ok(new
+                {
+                    success = true,
+                    data = new
+                    {
+                        id = pago.Id,
+                        proveedor = pago.ProveedorServicio?.Nombre,
+                        numeroContrato = pago.NumeroContrato,
+                        monto = pago.Monto,
+                        moneda = pago.Moneda,
+                        comision = pago.Comision,
+                        estado = pago.Estado,
+                        fechaCreacion = pago.FechaCreacion,
+                        fechaEjecucion = pago.FechaEjecucion,
+                        comprobanteReferencia = pago.ComprobanteReferencia,
+                        descripcion = pago.Descripcion
+                    }
+                });
             }
             catch (Exception ex)
             {
+                _logger.LogError($"Error obteniendo pago: {ex.Message}");
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
         }
@@ -226,12 +304,14 @@ namespace SistemaBancaEnLinea.API.Controllers
                         comision = p.Comision,
                         estado = p.Estado,
                         fechaCreacion = p.FechaCreacion,
+                        fechaEjecucion = p.FechaEjecucion,
                         comprobanteReferencia = p.ComprobanteReferencia
-                    })
+                    }).OrderByDescending(p => p.fechaCreacion)
                 });
             }
             catch (Exception ex)
             {
+                _logger.LogError($"Error obteniendo historial: {ex.Message}");
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
         }
@@ -272,6 +352,8 @@ namespace SistemaBancaEnLinea.API.Controllers
             return int.TryParse(clienteIdClaim, out var clienteId) ? clienteId : 0;
         }
     }
+
+    // ========== DTOs ==========
 
     public class ValidarContratoRequest
     {
