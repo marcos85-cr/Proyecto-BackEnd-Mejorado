@@ -30,6 +30,9 @@ namespace SistemaBancaEnLinea.BC.Modelos
         [Required]
         public string Estado { get; set; } = "Inactivo";
 
+        // Fecha de creación
+        public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
+
         // FK a Cliente
         public int ClienteId { get; set; }
         public Cliente Cliente { get; set; } = null!;

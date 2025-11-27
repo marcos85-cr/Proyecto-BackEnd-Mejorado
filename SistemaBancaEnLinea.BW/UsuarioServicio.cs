@@ -244,7 +244,7 @@ namespace SistemaBancaEnLinea.BW
 
         /// <summary>
         /// Hash de contraseña usando SHA256 (Hash simple para fines de ejemplo)
-        /// En producción se usaría PBKDF2 o Argon2
+        ///
         /// </summary>
         private string HashPassword(string password)
         {
@@ -261,5 +261,45 @@ namespace SistemaBancaEnLinea.BW
             var hashOfInput = HashPassword(password);
             return hashOfInput == hash;
         }
+
+        
+        /// <summary>
+        /// Obtiene todos los usuarios
+        /// </summary>
+        public async Task<List<Usuario>> ObtenerTodosAsync()
+        {
+            return await _context.Usuarios.ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene usuarios por rol
+        /// </summary>
+        public async Task<List<Usuario>> ObtenerPorRolAsync(string rol)
+        {
+            return await _context.Usuarios
+                .Where(u => u.Rol == rol)
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Actualiza un usuario
+        /// </summary>
+        public async Task<Usuario> ActualizarUsuarioAsync(Usuario usuario)
+        {
+            var existente = await _context.Usuarios.FindAsync(usuario.Id);
+            if (existente == null)
+                throw new InvalidOperationException("Usuario no encontrado.");
+
+            existente.Nombre = usuario.Nombre;
+            existente.Telefono = usuario.Telefono;
+            existente.Identificacion = usuario.Identificacion;
+
+            await _context.SaveChangesAsync();
+            return existente;
+        }
+
+
+
+
     }
 }

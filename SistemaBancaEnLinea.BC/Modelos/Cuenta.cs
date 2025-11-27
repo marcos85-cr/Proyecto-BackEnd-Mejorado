@@ -28,6 +28,9 @@ namespace SistemaBancaEnLinea.BC.Modelos
         [Required]
         public string Estado { get; set; } = "Activa";
 
+        // Fecha de apertura de la cuenta
+        public DateTime? FechaApertura { get; set; }
+
         // Relación con Cliente (FK)
         public int ClienteId { get; set; }
         public Cliente Cliente { get; set; } = null!;

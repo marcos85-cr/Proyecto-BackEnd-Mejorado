@@ -18,6 +18,15 @@ namespace SistemaBancaEnLinea.BC.Modelos
         [Required]
         public string Rol { get; set; } = string.Empty;
 
+        // Nombre del usuario
+        public string? Nombre { get; set; }
+
+        // Identificación del usuario
+        public string? Identificacion { get; set; }
+
+        // Teléfono del usuario
+        public string? Telefono { get; set; }
+
         // RF-A2: Control de intentos fallidos
         public int IntentosFallidos { get; set; } = 0;
 
@@ -26,6 +35,9 @@ namespace SistemaBancaEnLinea.BC.Modelos
 
         // RF-A2: Fecha de bloqueo (para los 15 minutos)
         public DateTime? FechaBloqueo { get; set; }
+
+        // Fecha de creación
+        public DateTime FechaCreacion { get; set; } = DateTime.UtcNow;
 
         // Relación 1:1 con Cliente (opcional, solo para rol Cliente)
         public int? ClienteId { get; set; }

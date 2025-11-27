@@ -21,6 +21,15 @@ namespace SistemaBancaEnLinea.BC.Modelos
         [EmailAddress]
         public string? Correo { get; set; }
 
+        // Estado del cliente
+        public string Estado { get; set; } = "Activo";
+
+        // Fecha de registro
+        public DateTime FechaRegistro { get; set; } = DateTime.UtcNow;
+
+        // Última operación
+        public DateTime? UltimaOperacion { get; set; }
+
         // Relación 1:1 con Usuario
         public Usuario? UsuarioAsociado { get; set; }
 

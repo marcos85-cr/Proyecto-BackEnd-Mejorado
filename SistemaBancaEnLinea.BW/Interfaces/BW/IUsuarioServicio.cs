@@ -10,6 +10,9 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
         Task<bool> ExisteEmailAsync(string email);
         Task<Usuario?> ObtenerPorIdAsync(int id);
         Task<Usuario?> ObtenerPorEmailAsync(string email);
+        Task<List<Usuario>> ObtenerTodosAsync();
+        Task<List<Usuario>> ObtenerPorRolAsync(string rol);
+        Task<Usuario> ActualizarUsuarioAsync(Usuario usuario);
     }
 
     public class ResultadoLogin

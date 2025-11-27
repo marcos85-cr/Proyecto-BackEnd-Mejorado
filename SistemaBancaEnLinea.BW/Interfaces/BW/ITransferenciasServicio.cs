@@ -9,14 +9,18 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
         Task<List<Transaccion>> ObtenerMisTransaccionesAsync(int clienteId);
         Task<Transaccion?> ObtenerTransaccionAsync(int id);
         Task<byte[]> DescargarComprobanteAsync(int transaccionId);
+        Task<Transaccion> AprobarTransaccionAsync(int transaccionId, int aprobadorId);
+        Task<Transaccion> RechazarTransaccionAsync(int transaccionId, int aprobadorId, string razon);
     }
 
     public class TransferRequest
     {
+        public int ClienteId { get; set; }
         public int CuentaOrigenId { get; set; }
         public int? CuentaDestinoId { get; set; }
         public int? BeneficiarioId { get; set; }
         public decimal Monto { get; set; }
+        public string Moneda { get; set; } = "CRC";
         public string? Descripcion { get; set; }
         public bool Programada { get; set; }
         public DateTime? FechaProgramada { get; set; }
@@ -34,5 +38,6 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
         public decimal SaldoDespues { get; set; }
         public decimal LimiteDisponible { get; set; }
         public string? Mensaje { get; set; }
+        public List<string> Errores { get; set; } = new();
     }
 }

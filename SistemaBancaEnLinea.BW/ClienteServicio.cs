@@ -28,12 +28,15 @@ namespace SistemaBancaEnLinea.BW
             if (clienteExistente != null)
                 throw new InvalidOperationException("Ya existe un cliente con esta identificación.");
 
+            cliente.FechaRegistro = DateTime.UtcNow;
+            cliente.Estado = "Activo";
+
             var clienteCreado = await _clienteAcciones.CrearAsync(cliente);
 
             // Registrar en auditoría
             await _auditoriaAcciones.RegistrarAsync(
                 cliente.UsuarioAsociado?.Id ?? 0,
-                "RegistroUsuario",
+                "RegistroCliente",
                 $"Se registró nuevo cliente: {cliente.NombreCompleto}"
             );
 
@@ -51,10 +54,35 @@ namespace SistemaBancaEnLinea.BW
             return clientes.FirstOrDefault(c => c.UsuarioAsociado?.Id == usuarioId);
         }
 
+        public async Task<Cliente?> ObtenerPorIdentificacionAsync(string identificacion)
+        {
+            return await _clienteAcciones.ObtenerPorIdentificacionAsync(identificacion);
+        }
+
         public async Task<Cliente> ActualizarClienteAsync(Cliente cliente)
         {
-            await _clienteAcciones.ActualizarAsync(cliente);
-            return cliente;
+            var existente = await _clienteAcciones.ObtenerPorIdAsync(cliente.Id);
+            if (existente == null)
+                throw new InvalidOperationException("Cliente no encontrado.");
+
+            existente.NombreCompleto = cliente.NombreCompleto;
+            existente.Telefono = cliente.Telefono;
+            existente.Correo = cliente.Correo;
+
+            await _clienteAcciones.ActualizarAsync(existente);
+
+            await _auditoriaAcciones.RegistrarAsync(
+                existente.UsuarioAsociado?.Id ?? 0,
+                "ActualizacionCliente",
+                $"Cliente {existente.NombreCompleto} actualizado"
+            );
+
+            return existente;
+        }
+
+        public async Task<bool> ExisteIdentificacionAsync(string identificacion)
+        {
+            return await _clienteAcciones.ExisteIdentificacionAsync(identificacion);
         }
     }
 }
