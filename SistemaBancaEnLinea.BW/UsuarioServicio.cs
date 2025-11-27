@@ -20,6 +20,7 @@ namespace SistemaBancaEnLinea.BW
     public class UsuarioServicio : IUsuarioServicio
     {
         private readonly BancaContext _context;
+        // La clave JWT en un entorno real debe ser leída desde configuración
         private const string JWT_SECRET = "mock-jwt-secret-key-2025";
         private const int TOKEN_EXPIRATION_SECONDS = 20 * 60; // 20 minutos
 
@@ -168,6 +169,23 @@ namespace SistemaBancaEnLinea.BW
             return await _context.Usuarios.AnyAsync(u => u.Email == email);
         }
 
+        /// <summary>
+        /// Obtiene un usuario por su ID
+        /// </summary>
+        public async Task<Usuario?> ObtenerPorIdAsync(int id)
+        {
+            // Nota: FindAsync es más eficiente para buscar por la PK
+            return await _context.Usuarios.FindAsync(id);
+        }
+
+        /// <summary>
+        /// Obtiene un usuario por su Email
+        /// </summary>
+        public async Task<Usuario?> ObtenerPorEmailAsync(string email)
+        {
+            return await _context.Usuarios.FirstOrDefaultAsync(u => u.Email == email);
+        }
+
         // ========== MÉTODOS PRIVADOS ==========
 
         /// <summary>
@@ -186,14 +204,25 @@ namespace SistemaBancaEnLinea.BW
                     sub = usuario.Id.ToString(),
                     email = usuario.Email,
                     role = usuario.Rol,
+                    // Usar Email como nombre por defecto si no hay un campo 'Nombre' directo en Usuario
                     nombre = usuario.Email,
                     iat = now,
                     exp = exp
                 };
 
-                var base64Header = Convert.ToBase64String(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(header)));
-                var base64Payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(payload)));
-                var signature = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{base64Header}.{base64Payload}.{JWT_SECRET}"));
+                // Serializar a JSON y luego a Base64 URL Safe
+                var base64Header = Convert.ToBase64String(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(header)))
+                                          .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+                var base64Payload = Convert.ToBase64String(Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(payload)))
+                                           .Replace('+', '-').Replace('/', '_').TrimEnd('=');
+
+                // Generación de firma mock (No es una firma HMAC real con la clave secreta)
+                // En un proyecto real, se usaría una biblioteca JWT como System.IdentityModel.Tokens.Jwt
+                using var hmac = new System.Security.Cryptography.HMACSHA256(Encoding.UTF8.GetBytes(JWT_SECRET));
+                var input = Encoding.UTF8.GetBytes($"{base64Header}.{base64Payload}");
+                var hash = hmac.ComputeHash(input);
+                var signature = Convert.ToBase64String(hash)
+                                        .Replace('+', '-').Replace('/', '_').TrimEnd('=');
 
                 var token = $"{base64Header}.{base64Payload}.{signature}";
                 return token;
@@ -209,11 +238,13 @@ namespace SistemaBancaEnLinea.BW
         /// </summary>
         private bool ValidarPassword(string password)
         {
+            // Reutiliza la lógica de reglas de negocio
             return AutenticacionReglas.ValidarFormatoPassword(password);
         }
 
         /// <summary>
-        /// Hash de contraseña usando SHA256
+        /// Hash de contraseña usando SHA256 (Hash simple para fines de ejemplo)
+        /// En producción se usaría PBKDF2 o Argon2
         /// </summary>
         private string HashPassword(string password)
         {
