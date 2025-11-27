@@ -9,14 +9,7 @@ using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.BW
 {
-    public class ResultadoLogin
-    {
-        public bool Exitoso { get; set; }
-        public string? Token { get; set; }
-        public string? Error { get; set; }
-        public Usuario? Usuario { get; set; }
-    }
-
+    
     public class UsuarioServicio : IUsuarioServicio
     {
         private readonly BancaContext _context;
