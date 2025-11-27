@@ -3,7 +3,7 @@
 namespace SistemaBancaEnLinea.BW.Interfaces.BW
 {
     public interface ITransferenciasServicio
-    {
+    {   // Operaciones CRUD básicas
         Task<TransferPrecheck> PreCheckTransferenciaAsync(TransferRequest request);
         Task<Transaccion> EjecutarTransferenciaAsync(TransferRequest request);
         Task<List<Transaccion>> ObtenerMisTransaccionesAsync(int clienteId);
@@ -11,6 +11,11 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
         Task<byte[]> DescargarComprobanteAsync(int transaccionId);
         Task<Transaccion> AprobarTransaccionAsync(int transaccionId, int aprobadorId);
         Task<Transaccion> RechazarTransaccionAsync(int transaccionId, int aprobadorId, string razon);
+
+        // Gestor de Clientes
+        Task<List<Transaccion>> ObtenerOperacionesPorGestorAsync(int gestorId, DateTime? fechaInicio, DateTime? fechaFin);
+        Task<List<Transaccion>> ObtenerOperacionesPendientesPorGestorAsync(int gestorId);
+        Task<List<Transaccion>> ObtenerTransaccionesFiltradasAsync(int clienteId, DateTime? fechaInicio, DateTime? fechaFin, string? tipo, string? estado);
     }
 
     public class TransferRequest

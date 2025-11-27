@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
@@ -261,7 +262,12 @@ namespace SistemaBancaEnLinea.BW
             {
                 // Actualizar saldos
                 var cuentaOrigen = await _cuentaAcciones.ObtenerPorIdAsync(transaccion.CuentaOrigenId);
-                cuentaOrigen!.Saldo -= (transaccion.Monto + transaccion.Comision);
+
+                // Verificar saldo suficiente antes de aprobar
+                if (cuentaOrigen!.Saldo < (transaccion.Monto + transaccion.Comision))
+                    throw new InvalidOperationException("Saldo insuficiente en la cuenta origen.");
+
+                cuentaOrigen.Saldo -= (transaccion.Monto + transaccion.Comision);
                 await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
 
                 if (transaccion.CuentaDestinoId.HasValue)
@@ -276,6 +282,7 @@ namespace SistemaBancaEnLinea.BW
 
                 transaccion.Estado = "Exitosa";
                 transaccion.FechaEjecucion = DateTime.UtcNow;
+                transaccion.SaldoPosterior = cuentaOrigen.Saldo;
                 await _transaccionAcciones.ActualizarAsync(transaccion);
 
                 await transaction.CommitAsync();
@@ -283,7 +290,7 @@ namespace SistemaBancaEnLinea.BW
                 await _auditoriaAcciones.RegistrarAsync(
                     aprobadorId,
                     "AprobacionTransferencia",
-                    $"Transferencia {transaccionId} aprobada"
+                    $"Transferencia {transaccionId} aprobada por usuario {aprobadorId}"
                 );
 
                 return transaccion;
@@ -304,7 +311,7 @@ namespace SistemaBancaEnLinea.BW
             if (transaccion.Estado != "PendienteAprobacion")
                 throw new InvalidOperationException("La transacción no está pendiente de aprobación.");
 
-            transaccion.Estado = "Cancelada";
+            transaccion.Estado = "Rechazada";
             transaccion.Descripcion = $"{transaccion.Descripcion} | Rechazada: {razon}";
             await _transaccionAcciones.ActualizarAsync(transaccion);
 
@@ -345,6 +352,81 @@ namespace SistemaBancaEnLinea.BW
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
+        // ========== MÉTODOS PARA GESTOR ==========
+
+        /// <summary>
+        /// Obtiene todas las operaciones de los clientes asignados a un gestor
+        /// </summary>
+        public async Task<List<Transaccion>> ObtenerOperacionesPorGestorAsync(int gestorId, DateTime? fechaInicio, DateTime? fechaFin)
+        {
+            var query = _context.Transacciones
+                .Include(t => t.Cliente)
+                .Include(t => t.CuentaOrigen)
+                .Include(t => t.CuentaDestino)
+                .Include(t => t.Beneficiario)
+                .Include(t => t.ProveedorServicio)
+                .Where(t => t.Cliente.GestorAsignadoId == gestorId);
+
+            if (fechaInicio.HasValue)
+                query = query.Where(t => t.FechaCreacion >= fechaInicio.Value);
+
+            if (fechaFin.HasValue)
+                query = query.Where(t => t.FechaCreacion <= fechaFin.Value);
+
+            return await query
+                .OrderByDescending(t => t.FechaCreacion)
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene las operaciones pendientes de aprobación de los clientes del gestor
+        /// </summary>
+        public async Task<List<Transaccion>> ObtenerOperacionesPendientesPorGestorAsync(int gestorId)
+        {
+            return await _context.Transacciones
+                .Include(t => t.Cliente)
+                .Include(t => t.CuentaOrigen)
+                .Include(t => t.CuentaDestino)
+                .Where(t => t.Cliente.GestorAsignadoId == gestorId && t.Estado == "PendienteAprobacion")
+                .OrderByDescending(t => t.FechaCreacion)
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene transacciones de un cliente con filtros
+        /// </summary>
+        public async Task<List<Transaccion>> ObtenerTransaccionesFiltradasAsync(
+            int clienteId,
+            DateTime? fechaInicio,
+            DateTime? fechaFin,
+            string? tipo,
+            string? estado)
+        {
+            var query = _context.Transacciones
+                .Include(t => t.CuentaOrigen)
+                .Include(t => t.CuentaDestino)
+                .Include(t => t.Beneficiario)
+                .Include(t => t.ProveedorServicio)
+                .Where(t => t.ClienteId == clienteId);
+
+            if (fechaInicio.HasValue)
+                query = query.Where(t => t.FechaCreacion >= fechaInicio.Value);
+
+            if (fechaFin.HasValue)
+                query = query.Where(t => t.FechaCreacion <= fechaFin.Value);
+
+            if (!string.IsNullOrEmpty(tipo))
+                query = query.Where(t => t.Tipo == tipo);
+
+            if (!string.IsNullOrEmpty(estado))
+                query = query.Where(t => t.Estado == estado);
+
+            return await query
+                .OrderByDescending(t => t.FechaCreacion)
+                .ToListAsync();
+        }
+
+        // Genera una referencia única para el comprobante de la transferencia
         private string GenerarReferenciaComprobante()
         {
             return $"TRF-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}";
