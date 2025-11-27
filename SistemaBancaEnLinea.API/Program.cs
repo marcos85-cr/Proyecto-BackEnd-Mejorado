@@ -2,20 +2,30 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using System.Text;
 using SistemaBancaEnLinea.DA;
 using SistemaBancaEnLinea.DA.Acciones;
 using SistemaBancaEnLinea.BW;
 using SistemaBancaEnLinea.BW.CU;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
-using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ========== CONFIGURACIÓN DEL DbContext ==========
-builder.Services.AddDbContext<BancaContext>(options =>
-    options.UseSqlServer(builder.Configuration.GetConnectionString("DefaultConnection")));
+// ========== CONFIGURACIÓN DE SERVICIOS ==========
 
-// ========== CONFIGURACIÓN DE CORS ==========
+// 1. Configurar DbContext
+builder.Services.AddDbContext<BancaContext>(options =>
+    options.UseSqlServer(
+        builder.Configuration.GetConnectionString("DefaultConnection"),
+        sqlOptions => sqlOptions.EnableRetryOnFailure(
+            maxRetryCount: 3,
+            maxRetryDelay: TimeSpan.FromSeconds(5),
+            errorNumbersToAdd: null
+        )
+    )
+);
+
+// 2. Configurar CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -26,30 +36,35 @@ builder.Services.AddCors(options =>
     });
 });
 
-// ========== CONFIGURACIÓN DE JWT ==========
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "TuClaveSecretaMuyLargaYSegura1234567890!@#$%";
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "SistemaBancaEnLinea";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "SistemaBancaEnLinea";
+// 3. Configurar JWT Authentication
+var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT Key no configurada");
+var key = Encoding.UTF8.GetBytes(jwtKey);
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.RequireHttpsMetadata = false; // En producción usar true
+    options.SaveToken = true;
+    options.TokenValidationParameters = new TokenValidationParameters
     {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtIssuer,
-            ValidAudience = jwtAudience,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
-            ClockSkew = TimeSpan.Zero
-        };
-    });
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidateIssuer = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidateAudience = true,
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+});
 
 builder.Services.AddAuthorization();
 
-// ========== REGISTRO DE ACCIONES (DA) ==========
+// 4. Registrar Acciones (DA Layer)
 builder.Services.AddScoped<UsuarioAcciones>();
 builder.Services.AddScoped<ClienteAcciones>();
 builder.Services.AddScoped<CuentaAcciones>();
@@ -59,7 +74,7 @@ builder.Services.AddScoped<ProgramacionAcciones>();
 builder.Services.AddScoped<ProveedorServicioAcciones>();
 builder.Services.AddScoped<AuditoriaAcciones>();
 
-// ========== REGISTRO DE SERVICIOS (BW) ==========
+// 5. Registrar Servicios (BW Layer)
 builder.Services.AddScoped<IUsuarioServicio, UsuarioServicio>();
 builder.Services.AddScoped<IClienteServicio, ClienteServicio>();
 builder.Services.AddScoped<ICuentaServicio, CuentaServicio>();
@@ -70,20 +85,20 @@ builder.Services.AddScoped<IProgramacionServicio, ProgramacionServicio>();
 builder.Services.AddScoped<IProveedorServicioServicio, ProveedorServicioServicio>();
 builder.Services.AddScoped<IAuditoriaServicio, AuditoriaServicio>();
 
-// ========== REGISTRO DE CASOS DE USO ==========
+// 6. Registrar Casos de Uso
 builder.Services.AddScoped<GestionCuentasCU>();
 builder.Services.AddScoped<GestionUsuariosCU>();
 builder.Services.AddScoped<TransferenciasCU>();
 
-// ========== CONFIGURACIÓN DE CONTROLLERS ==========
+// 7. Configurar Controllers
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
-        options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
-        options.JsonSerializerOptions.WriteIndented = true;
+        options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
 
-// ========== CONFIGURACIÓN DE SWAGGER ==========
+// 8. Configurar Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {
@@ -91,18 +106,17 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "Sistema Banca en Línea API",
         Version = "v1",
-        Description = "API para el sistema de banca en línea"
+        Description = "API REST para el sistema de banca en línea - Proyecto SOF-18"
     });
 
-    // Configuración de seguridad JWT en Swagger
+    // Configurar JWT en Swagger
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
+        Description = "JWT Authorization header usando el esquema Bearer. Ejemplo: 'Bearer {token}'",
         Name = "Authorization",
-        Type = SecuritySchemeType.ApiKey,
-        Scheme = "Bearer",
-        BearerFormat = "JWT",
         In = ParameterLocation.Header,
-        Description = "Ingrese 'Bearer' seguido de un espacio y el token JWT"
+        Type = SecuritySchemeType.ApiKey,
+        Scheme = "Bearer"
     });
 
     c.AddSecurityRequirement(new OpenApiSecurityRequirement
@@ -119,56 +133,73 @@ builder.Services.AddSwaggerGen(c =>
             Array.Empty<string>()
         }
     });
+
+    // Incluir comentarios XML
+    var xmlFile = $"{System.Reflection.Assembly.GetExecutingAssembly().GetName().Name}.xml";
+    var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+    if (File.Exists(xmlPath))
+    {
+        c.IncludeXmlComments(xmlPath);
+    }
+});
+
+// 9. Configurar Logging
+builder.Services.AddLogging(logging =>
+{
+    logging.ClearProviders();
+    logging.AddConsole();
+    logging.AddDebug();
 });
 
 var app = builder.Build();
 
-// ========== PIPELINE DE MIDDLEWARE ==========
-if (app.Environment.IsDevelopment())
+// ========== CONFIGURACIÓN DEL PIPELINE ==========
+
+// 10. Aplicar migraciones y seed data automáticamente
+using (var scope = app.Services.CreateScope())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI(c =>
+    var services = scope.ServiceProvider;
+    try
     {
-        c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sistema Banca en Línea API v1");
-    });
+        var context = services.GetRequiredService<BancaContext>();
+
+        // Aplicar migraciones pendientes
+        Console.WriteLine("Aplicando migraciones pendientes...");
+        await context.Database.MigrateAsync();
+        Console.WriteLine("Migraciones aplicadas exitosamente.");
+
+        // Ejecutar seed data
+        Console.WriteLine("Iniciando seed de datos...");
+        await SeedData.InitializeAsync(context);
+        Console.WriteLine("Seed de datos completado.");
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Error durante la migración o seed de datos");
+        throw;
+    }
 }
-// Habilitar CORS
+
+// 11. Configurar Swagger (Development y Production)
+app.UseSwagger();
+app.UseSwaggerUI(c =>
+{
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sistema Banca en Línea API v1");
+    c.RoutePrefix = string.Empty; // Swagger en la raíz
+});
+
+// 12. Middleware Pipeline
+app.UseHttpsRedirection();
 app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-// ========== INICIALIZAR BASE DE DATOS Y DATOS DE PRUEBA ==========
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    var logger = services.GetRequiredService<ILogger<Program>>();
-
-    try
-    {
-        var context = services.GetRequiredService<BancaContext>();
-
-        logger.LogInformation("Verificando base de datos...");
-
-        if (context.Database.EnsureCreated())
-        {
-            logger.LogInformation("Base de datos creada exitosamente.");
-        }
-        else
-        {
-            logger.LogInformation("Base de datos ya existe.");
-        }
-
-        // Ejecutar seed de datos
-        logger.LogInformation("Ejecutando seed de datos...");
-        await SeedData.InitializeAsync(context);
-        logger.LogInformation("Seed de datos completado.");
-    }
-    catch (Exception ex)
-    {
-        logger.LogError(ex, "Error al inicializar la base de datos");
-        throw;
-    }
-}
+// 13. Iniciar aplicación
+Console.WriteLine("========================================");
+Console.WriteLine("API Sistema Banca en Línea INICIADA");
+Console.WriteLine($"Swagger UI: {app.Urls.FirstOrDefault()}/swagger");
+Console.WriteLine("========================================");
 
 app.Run();

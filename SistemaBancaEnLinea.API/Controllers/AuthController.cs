@@ -47,6 +47,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
             return Ok(new
             {
+                
                 success = true,
                 message = "Inicio de sesión exitoso.",
                 token = resultado.Token,

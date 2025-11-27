@@ -6,6 +6,10 @@ using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
+    /// <summary>
+    /// Controlador para funcionalidades del rol Gestor
+    /// Gestión de cartera de clientes y operaciones
+    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize(Roles = "Gestor")]
@@ -40,6 +44,11 @@ namespace SistemaBancaEnLinea.API.Controllers
             return int.TryParse(userIdClaim, out var userId) ? userId : 0;
         }
 
+        private string GetGestorNombreFromToken()
+        {
+            return User.FindFirst("nombre")?.Value ?? "Gestor";
+        }
+
         #endregion
 
         #region ========== DASHBOARD ==========
@@ -57,12 +66,14 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (gestorId == 0)
                     return Unauthorized(new { success = false, message = "Gestor no identificado." });
 
+                // Obtener clientes asignados al gestor
                 var misClientes = await _clienteServicio.ObtenerClientesPorGestorAsync(gestorId);
 
                 int totalClientes = misClientes.Count;
                 int totalCuentasActivas = 0;
                 decimal volumenTotal = 0;
 
+                // Calcular estadísticas de cuentas
                 foreach (var cliente in misClientes)
                 {
                     var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(cliente.Id);
@@ -71,6 +82,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     volumenTotal += cuentasActivas.Sum(c => c.Saldo);
                 }
 
+                // Obtener operaciones
                 var clienteIds = misClientes.Select(c => c.Id).ToList();
                 var operacionesHoy = await _transferenciasServicio.ObtenerOperacionesDeHoyPorClientesAsync(clienteIds);
                 var pendientesAprobacion = await _transferenciasServicio.ObtenerOperacionesPendientesPorClientesAsync(clienteIds);
@@ -97,6 +109,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// GET: api/gestor/operaciones-pendientes
+        /// Obtiene las operaciones pendientes de aprobación
         /// </summary>
         [HttpGet("operaciones-pendientes")]
         public async Task<IActionResult> GetOperacionesPendientes()
@@ -116,8 +129,8 @@ namespace SistemaBancaEnLinea.API.Controllers
                     success = true,
                     data = operacionesPendientes.Select(op => new
                     {
-                        id = op.Id,
-                        clienteId = op.ClienteId,
+                        id = op.Id.ToString(),
+                        clienteId = op.ClienteId.ToString(),
                         clienteNombre = op.Cliente?.NombreCompleto ?? "N/A",
                         tipo = op.Tipo,
                         descripcion = op.Descripcion,
@@ -146,6 +159,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// GET: api/gestor/mis-clientes
+        /// Obtiene todos los clientes asignados al gestor
         /// </summary>
         [HttpGet("mis-clientes")]
         public async Task<IActionResult> GetMisClientes()
@@ -209,6 +223,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// GET: api/gestor/clientes/{clienteId}
+        /// Obtiene el detalle de un cliente específico
         /// </summary>
         [HttpGet("clientes/{clienteId}")]
         public async Task<IActionResult> GetDetalleCliente(int clienteId)
@@ -223,6 +238,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cliente == null)
                     return NotFound(new { success = false, message = "Cliente no encontrado." });
 
+                // Verificar que el cliente pertenece al gestor
                 if (cliente.GestorAsignadoId != gestorId)
                     return Forbid();
 
@@ -271,6 +287,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// GET: api/gestor/clientes/{clienteId}/cuentas
+        /// Obtiene las cuentas de un cliente
         /// </summary>
         [HttpGet("clientes/{clienteId}/cuentas")]
         public async Task<IActionResult> GetCuentasCliente(int clienteId)
@@ -317,11 +334,15 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// GET: api/gestor/clientes/{clienteId}/transacciones
+        /// Obtiene las transacciones de un cliente con filtros
         /// </summary>
         [HttpGet("clientes/{clienteId}/transacciones")]
         public async Task<IActionResult> GetTransaccionesCliente(
-            int clienteId, [FromQuery] DateTime? fechaInicio, [FromQuery] DateTime? fechaFin,
-            [FromQuery] string? tipo, [FromQuery] string? estado)
+            int clienteId, 
+            [FromQuery] DateTime? fechaInicio, 
+            [FromQuery] DateTime? fechaFin,
+            [FromQuery] string? tipo, 
+            [FromQuery] string? estado)
         {
             try
             {
@@ -344,7 +365,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     success = true,
                     data = transacciones.Select(t => new
                     {
-                        id = t.Id,
+                        id = t.Id.ToString(),
                         tipo = t.Tipo,
                         descripcion = t.Descripcion,
                         monto = t.Monto,
@@ -368,6 +389,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// POST: api/gestor/clientes/{clienteId}/cuentas
+        /// Crea una nueva cuenta para un cliente
         /// </summary>
         [HttpPost("clientes/{clienteId}/cuentas")]
         public async Task<IActionResult> CrearCuentaParaCliente(int clienteId, [FromBody] CrearCuentaGestorRequest request)
@@ -385,6 +407,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cliente.GestorAsignadoId != gestorId)
                     return Forbid();
 
+                // Validaciones
                 if (!CuentasReglas.ValidarTipoCuenta(request.Tipo))
                     return BadRequest(new { success = false, message = "Tipo de cuenta inválido. Use: Ahorros, Corriente, Inversión o Plazo fijo" });
 
@@ -394,8 +417,10 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (request.SaldoInicial < 0)
                     return BadRequest(new { success = false, message = "El saldo inicial no puede ser negativo." });
 
+                // Crear cuenta
                 var cuenta = await _cuentaServicio.CrearCuentaAsync(clienteId, request.Tipo, request.Moneda, request.SaldoInicial);
 
+                // Registrar auditoría
                 await _auditoriaServicio.RegistrarAsync(gestorId, "CreacionCuentaPorGestor",
                     $"Gestor creó cuenta {cuenta.Numero} para cliente {cliente.NombreCompleto}");
 
@@ -435,12 +460,17 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// GET: api/gestor/operaciones
+        /// Obtiene todas las operaciones con filtros
         /// </summary>
         [HttpGet("operaciones")]
         public async Task<IActionResult> GetOperaciones(
-            [FromQuery] string? estado, [FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate,
-            [FromQuery] decimal? minAmount, [FromQuery] decimal? maxAmount,
-            [FromQuery] string? clientName, [FromQuery] string? operationType)
+            [FromQuery] string? estado, 
+            [FromQuery] DateTime? startDate, 
+            [FromQuery] DateTime? endDate,
+            [FromQuery] decimal? minAmount, 
+            [FromQuery] decimal? maxAmount,
+            [FromQuery] string? clientName, 
+            [FromQuery] string? operationType)
         {
             try
             {
@@ -452,6 +482,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var clienteIds = misClientes.Select(c => c.Id).ToList();
                 var todasOperaciones = await _transferenciasServicio.ObtenerOperacionesPorClientesAsync(clienteIds);
 
+                // Aplicar filtros
                 var operacionesFiltradas = todasOperaciones.AsEnumerable();
 
                 if (!string.IsNullOrEmpty(estado) && estado != "all")
@@ -484,6 +515,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 var operacionesList = operacionesFiltradas.OrderByDescending(op => op.FechaCreacion).ToList();
 
+                // Resumen
                 var today = DateTime.UtcNow.Date;
                 var pending = todasOperaciones.Count(op => op.Estado == "PendienteAprobacion");
                 var approvedToday = todasOperaciones.Count(op => op.Estado == "Exitosa" && op.FechaEjecucion?.Date == today);
@@ -509,7 +541,12 @@ namespace SistemaBancaEnLinea.API.Controllers
                         requiereAprobacion = op.Estado == "PendienteAprobacion",
                         esUrgente = op.Monto > 200000 && op.Estado == "PendienteAprobacion"
                     }),
-                    summary = new { pending = pending, approved = approvedToday, rejected = rejectedToday }
+                    summary = new 
+                    { 
+                        pending = pending, 
+                        approved = approvedToday, 
+                        rejected = rejectedToday 
+                    }
                 });
             }
             catch (Exception ex)
@@ -521,6 +558,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// GET: api/gestor/operaciones/{operacionId}
+        /// Obtiene el detalle de una operación
         /// </summary>
         [HttpGet("operaciones/{operacionId}")]
         public async Task<IActionResult> GetDetalleOperacion(int operacionId)
@@ -575,6 +613,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// PUT: api/gestor/operaciones/{operacionId}/aprobar
+        /// Aprueba una operación pendiente
         /// </summary>
         [HttpPut("operaciones/{operacionId}/aprobar")]
         public async Task<IActionResult> AprobarOperacion(int operacionId)
@@ -605,7 +644,12 @@ namespace SistemaBancaEnLinea.API.Controllers
                 {
                     success = true,
                     message = "Operación aprobada exitosamente.",
-                    data = new { id = operacionAprobada.Id, estado = operacionAprobada.Estado, fechaEjecucion = operacionAprobada.FechaEjecucion }
+                    data = new 
+                    { 
+                        id = operacionAprobada.Id, 
+                        estado = operacionAprobada.Estado, 
+                        fechaEjecucion = operacionAprobada.FechaEjecucion 
+                    }
                 });
             }
             catch (InvalidOperationException ex)
@@ -621,6 +665,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// PUT: api/gestor/operaciones/{operacionId}/rechazar
+        /// Rechaza una operación pendiente
         /// </summary>
         [HttpPut("operaciones/{operacionId}/rechazar")]
         public async Task<IActionResult> RechazarOperacion(int operacionId, [FromBody] RechazarOperacionRequest request)
@@ -654,7 +699,11 @@ namespace SistemaBancaEnLinea.API.Controllers
                 {
                     success = true,
                     message = "Operación rechazada.",
-                    data = new { id = operacionRechazada.Id, estado = operacionRechazada.Estado }
+                    data = new 
+                    { 
+                        id = operacionRechazada.Id, 
+                        estado = operacionRechazada.Estado 
+                    }
                 });
             }
             catch (InvalidOperationException ex)
@@ -673,6 +722,9 @@ namespace SistemaBancaEnLinea.API.Controllers
 
     #region ========== DTOs ==========
 
+    /// <summary>
+    /// DTO para crear cuenta desde gestor
+    /// </summary>
     public class CrearCuentaGestorRequest
     {
         public string Tipo { get; set; } = string.Empty;
@@ -680,6 +732,9 @@ namespace SistemaBancaEnLinea.API.Controllers
         public decimal SaldoInicial { get; set; } = 0;
     }
 
+    /// <summary>
+    /// DTO para rechazar operación
+    /// </summary>
     public class RechazarOperacionRequest
     {
         public string Razon { get; set; } = string.Empty;

@@ -37,6 +37,11 @@ namespace SistemaBancaEnLinea.BW
             _logger = logger;
         }
 
+        #region ========== OPERACIONES CRUD BÁSICAS ==========
+
+        /// <summary>
+        /// RF-D1: Pre-check de transferencia
+        /// </summary>
         public async Task<TransferPrecheck> PreCheckTransferenciaAsync(TransferRequest request)
         {
             var resultado = new TransferPrecheck();
@@ -125,6 +130,9 @@ namespace SistemaBancaEnLinea.BW
             }
         }
 
+        /// <summary>
+        /// RF-D2: Ejecutar transferencia con idempotency
+        /// </summary>
         public async Task<Transaccion> EjecutarTransferenciaAsync(TransferRequest request)
         {
             // Verificar idempotency
@@ -237,16 +245,25 @@ namespace SistemaBancaEnLinea.BW
             }
         }
 
+        /// <summary>
+        /// Obtiene todas las transacciones de un cliente
+        /// </summary>
         public async Task<List<Transaccion>> ObtenerMisTransaccionesAsync(int clienteId)
         {
             return await _transaccionAcciones.ObtenerPorClienteAsync(clienteId);
         }
 
+        /// <summary>
+        /// Obtiene una transacción por su ID
+        /// </summary>
         public async Task<Transaccion?> ObtenerTransaccionAsync(int id)
         {
             return await _transaccionAcciones.ObtenerPorIdAsync(id);
         }
 
+        /// <summary>
+        /// Aprueba una transacción pendiente
+        /// </summary>
         public async Task<Transaccion> AprobarTransaccionAsync(int transaccionId, int aprobadorId)
         {
             var transaccion = await _transaccionAcciones.ObtenerPorIdAsync(transaccionId);
@@ -293,6 +310,7 @@ namespace SistemaBancaEnLinea.BW
                     $"Transferencia {transaccionId} aprobada por usuario {aprobadorId}"
                 );
 
+                _logger.LogInformation($"Transacción {transaccionId} aprobada por {aprobadorId}");
                 return transaccion;
             }
             catch
@@ -302,6 +320,9 @@ namespace SistemaBancaEnLinea.BW
             }
         }
 
+        /// <summary>
+        /// Rechaza una transacción pendiente
+        /// </summary>
         public async Task<Transaccion> RechazarTransaccionAsync(int transaccionId, int aprobadorId, string razon)
         {
             var transaccion = await _transaccionAcciones.ObtenerPorIdAsync(transaccionId);
@@ -321,9 +342,13 @@ namespace SistemaBancaEnLinea.BW
                 $"Transferencia {transaccionId} rechazada. Razón: {razon}"
             );
 
+            _logger.LogInformation($"Transacción {transaccionId} rechazada por {aprobadorId}. Razón: {razon}");
             return transaccion;
         }
 
+        /// <summary>
+        /// Descarga el comprobante de una transacción
+        /// </summary>
         public async Task<byte[]> DescargarComprobanteAsync(int transaccionId)
         {
             var transaccion = await _transaccionAcciones.ObtenerPorIdAsync(transaccionId);
@@ -352,7 +377,9 @@ namespace SistemaBancaEnLinea.BW
             return Encoding.UTF8.GetBytes(sb.ToString());
         }
 
-        // ========== MÉTODOS PARA GESTOR ==========
+        #endregion
+
+        #region ========== MÉTODOS PARA GESTOR ==========
 
         /// <summary>
         /// Obtiene todas las operaciones de los clientes asignados a un gestor
@@ -393,9 +420,22 @@ namespace SistemaBancaEnLinea.BW
         }
 
         /// <summary>
-        /// Obtiene transacciones de un cliente con filtros
+        /// Obtiene transacciones de un cliente con filtros básicos
         /// </summary>
         public async Task<List<Transaccion>> ObtenerTransaccionesFiltradasAsync(
+            int clienteId,
+            DateTime? fechaInicio,
+            DateTime? fechaFin,
+            string? tipo,
+            string? estado)
+        {
+            return await ObtenerTransaccionesConFiltrosAsync(clienteId, fechaInicio, fechaFin, tipo, estado);
+        }
+
+        /// <summary>
+        /// Obtiene transacciones de un cliente con filtros avanzados
+        /// </summary>
+        public async Task<List<Transaccion>> ObtenerTransaccionesConFiltrosAsync(
             int clienteId,
             DateTime? fechaInicio,
             DateTime? fechaFin,
@@ -426,10 +466,120 @@ namespace SistemaBancaEnLinea.BW
                 .ToListAsync();
         }
 
-        // Genera una referencia única para el comprobante de la transferencia
+        /// <summary>
+        /// Obtiene las operaciones de hoy para una lista de clientes
+        /// </summary>
+        public async Task<List<Transaccion>> ObtenerOperacionesDeHoyPorClientesAsync(List<int> clienteIds)
+        {
+            if (clienteIds == null || !clienteIds.Any())
+                return new List<Transaccion>();
+
+            var hoy = DateTime.UtcNow.Date;
+            var manana = hoy.AddDays(1);
+
+            return await _context.Transacciones
+                .Include(t => t.Cliente)
+                .Include(t => t.CuentaOrigen)
+                .Include(t => t.CuentaDestino)
+                .Include(t => t.Beneficiario)
+                .Include(t => t.ProveedorServicio)
+                .Where(t => clienteIds.Contains(t.ClienteId) &&
+                           t.FechaCreacion >= hoy &&
+                           t.FechaCreacion < manana)
+                .OrderByDescending(t => t.FechaCreacion)
+                .ToListAsync();
+        }
+
+       
+
+        /// <summary>
+        /// Obtiene operaciones de clientes asignados a un gestor
+        /// </summary>
+        public async Task<List<Transaccion>> ObtenerOperacionesPorClientesAsync(List<int> clienteIds)
+        {
+            return await _context.Transacciones
+                .Include(t => t.Cliente)
+                .Include(t => t.CuentaOrigen)
+                .Include(t => t.CuentaDestino)
+                .Include(t => t.Beneficiario)
+                .Include(t => t.ProveedorServicio)
+                .Where(t => clienteIds.Contains(t.ClienteId))
+                .OrderByDescending(t => t.FechaCreacion)
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene operaciones pendientes de aprobación de clientes específicos
+        /// </summary>
+        public async Task<List<Transaccion>> ObtenerOperacionesPendientesPorClientesAsync(List<int> clienteIds)
+        {
+            return await _context.Transacciones
+                .Include(t => t.Cliente)
+                .Include(t => t.CuentaOrigen)
+                .Include(t => t.CuentaDestino)
+                .Include(t => t.Beneficiario)
+                .Where(t => clienteIds.Contains(t.ClienteId) && t.Estado == "PendienteAprobacion")
+                .OrderByDescending(t => t.FechaCreacion)
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene operaciones realizadas hoy de clientes específicos
+        /// </summary>
+        public async Task<List<Transaccion>> ObtenerOperacionesDeHoyPorClientesAsync(List<int> clienteIds)
+        {
+            var hoy = DateTime.UtcNow.Date;
+            return await _context.Transacciones
+                .Where(t => clienteIds.Contains(t.ClienteId) && t.FechaCreacion.Date == hoy)
+                .ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene transacciones con filtros avanzados
+        /// </summary>
+        public async Task<List<Transaccion>> ObtenerTransaccionesConFiltrosAsync(
+            int clienteId,
+            DateTime? fechaInicio,
+            DateTime? fechaFin,
+            string? tipo,
+            string? estado)
+        {
+            var query = _context.Transacciones
+                .Include(t => t.CuentaOrigen)
+                .Include(t => t.CuentaDestino)
+                .Include(t => t.Beneficiario)
+                .Include(t => t.ProveedorServicio)
+                .Where(t => t.ClienteId == clienteId);
+
+            if (fechaInicio.HasValue)
+                query = query.Where(t => t.FechaCreacion >= fechaInicio.Value);
+
+            if (fechaFin.HasValue)
+                query = query.Where(t => t.FechaCreacion <= fechaFin.Value);
+
+            if (!string.IsNullOrEmpty(tipo))
+                query = query.Where(t => t.Tipo == tipo);
+
+            if (!string.IsNullOrEmpty(estado))
+                query = query.Where(t => t.Estado == estado);
+
+            return await query
+                .OrderByDescending(t => t.FechaCreacion)
+                .ToListAsync();
+        }
+
+        #endregion
+
+        #region ========== MÉTODOS PRIVADOS ==========
+
+        /// <summary>
+        /// Genera una referencia única para el comprobante de la transferencia
+        /// </summary>
         private string GenerarReferenciaComprobante()
         {
             return $"TRF-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}";
         }
+
+        #endregion
     }
 }
