@@ -20,10 +20,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             _logger = logger;
         }
         
-        /// <summary>
-        /// GET: api/accounts/my-accounts
-        /// Obtiene todas las cuentas del cliente autenticado
-        /// </summary>
+      
         [HttpGet("my-accounts")]
         public async Task<IActionResult> GetMyAccounts()
         {
