@@ -102,6 +102,7 @@ namespace SistemaBancaEnLinea.BW
 
         /// <summary>
         /// Actualiza el alias de un beneficiario
+        /// RF-C2: No se puede editar si tiene operaciones pendientes
         /// </summary>
         public async Task<Beneficiario> ActualizarBeneficiarioAsync(int id, string nuevoAlias)
         {
@@ -114,6 +115,11 @@ namespace SistemaBancaEnLinea.BW
                 if (!BeneficiariosReglas.PuedeActualizarse(beneficiario))
                     throw new InvalidOperationException(
                         "Solo se pueden actualizar beneficiarios en estado Inactivo.");
+
+                // RF-C2: Validar que no tenga operaciones pendientes
+                if (await _beneficiarioAcciones.TieneOperacionesPendientesAsync(id))
+                    throw new InvalidOperationException(
+                        "No se puede editar el beneficiario porque tiene operaciones pendientes.");
 
                 if (!BeneficiariosReglas.ValidarAlias(nuevoAlias))
                     throw new InvalidOperationException("El alias no es válido.");
@@ -133,6 +139,7 @@ namespace SistemaBancaEnLinea.BW
 
         /// <summary>
         /// Elimina un beneficiario
+        /// RF-C2: No se puede eliminar si tiene operaciones pendientes
         /// </summary>
         public async Task EliminarBeneficiarioAsync(int id)
         {
@@ -141,6 +148,11 @@ namespace SistemaBancaEnLinea.BW
                 var beneficiario = await _beneficiarioAcciones.ObtenerPorIdAsync(id);
                 if (beneficiario == null)
                     throw new InvalidOperationException("El beneficiario no existe.");
+
+                // RF-C2: Validar que no tenga operaciones pendientes
+                if (await _beneficiarioAcciones.TieneOperacionesPendientesAsync(id))
+                    throw new InvalidOperationException(
+                        "No se puede eliminar el beneficiario porque tiene operaciones pendientes.");
 
                 await _beneficiarioAcciones.EliminarAsync(beneficiario);
 

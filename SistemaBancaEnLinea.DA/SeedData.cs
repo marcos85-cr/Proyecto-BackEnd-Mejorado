@@ -19,14 +19,13 @@ namespace SistemaBancaEnLinea.DA
             Console.WriteLine("Iniciando seed de datos...");
 
             // ========== 1. CREAR USUARIOS ==========
+            // Los datos personales están en Usuario
             var adminUser = new Usuario
             {
                 Email = "admin@banco.com",
                 PasswordHash = HashPassword("Admin123!"),
                 Rol = "Administrador",
-                Nombre = "Administrador del Sistema",
-                Identificacion = "0-0000-0000",
-                Telefono = "2222-2222",
+                Nombre = "Admin Sistema",
                 IntentosFallidos = 0,
                 EstaBloqueado = false,
                 FechaCreacion = DateTime.UtcNow
@@ -38,9 +37,7 @@ namespace SistemaBancaEnLinea.DA
                 Email = "gestor@banco.com",
                 PasswordHash = HashPassword("Gestor123!"),
                 Rol = "Gestor",
-                Nombre = "Gestor de Prueba",
-                Identificacion = "0-0000-0001",
-                Telefono = "2222-3333",
+                Nombre = "Gestor Principal",
                 IntentosFallidos = 0,
                 EstaBloqueado = false,
                 FechaCreacion = DateTime.UtcNow
@@ -80,12 +77,11 @@ namespace SistemaBancaEnLinea.DA
             Console.WriteLine("Usuarios creados.");
 
             // ========== 2. CREAR CLIENTES ==========
+            // Cliente solo tiene datos únicos (Direccion, FechaNacimiento)
             var cliente1 = new Cliente
             {
-                Identificacion = "1-1234-5678",
-                NombreCompleto = "Marcos Vargas",
-                Telefono = "8888-9999",
-                Correo = "cliente@banco.com",
+                Direccion = "San José, Costa Rica",
+                FechaNacimiento = new DateTime(1990, 5, 15),
                 Estado = "Activo",
                 FechaRegistro = DateTime.UtcNow.AddMonths(-6),
                 UsuarioAsociado = clienteUser,
@@ -95,10 +91,8 @@ namespace SistemaBancaEnLinea.DA
 
             var cliente2 = new Cliente
             {
-                Identificacion = "2-5678-1234",
-                NombreCompleto = "María López",
-                Telefono = "7777-8888",
-                Correo = "maria@banco.com",
+                Direccion = "Heredia, Costa Rica",
+                FechaNacimiento = new DateTime(1985, 8, 20),
                 Estado = "Activo",
                 FechaRegistro = DateTime.UtcNow.AddMonths(-3),
                 UsuarioAsociado = clienteUser2,

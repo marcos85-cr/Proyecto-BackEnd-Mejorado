@@ -67,5 +67,15 @@ namespace SistemaBancaEnLinea.DA.Acciones
 
             return await query.ToListAsync();
         }
+
+        /// <summary>
+        /// Verifica si un beneficiario tiene operaciones pendientes (Programada o PendienteAprobacion)
+        /// </summary>
+        public async Task<bool> TieneOperacionesPendientesAsync(int beneficiarioId)
+        {
+            return await _context.Transacciones
+                .AnyAsync(t => t.BeneficiarioId == beneficiarioId &&
+                              (t.Estado == "Programada" || t.Estado == "PendienteAprobacion"));
+        }
     }
 }

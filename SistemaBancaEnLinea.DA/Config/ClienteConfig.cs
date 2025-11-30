@@ -12,22 +12,16 @@ namespace SistemaBancaEnLinea.DA.Config
 
             builder.HasKey(c => c.Id);
 
-            builder.Property(c => c.Identificacion)
+            // Atributos únicos del cliente
+            builder.Property(c => c.Direccion)
+                .HasMaxLength(500);
+
+            builder.Property(c => c.FechaNacimiento);
+
+            builder.Property(c => c.Estado)
                 .IsRequired()
-                .HasMaxLength(50);
-
-            builder.HasIndex(c => c.Identificacion)
-                .IsUnique();
-
-            builder.Property(c => c.NombreCompleto)
-                .IsRequired()
-                .HasMaxLength(200);
-
-            builder.Property(c => c.Telefono)
-                .HasMaxLength(20);
-
-            builder.Property(c => c.Correo)
-                .HasMaxLength(256);
+                .HasMaxLength(20)
+                .HasDefaultValue("Activo");
 
             // Relación 1:N Gestor -> Clientes
             builder.HasOne(c => c.GestorAsignado)

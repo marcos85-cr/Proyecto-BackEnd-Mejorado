@@ -343,40 +343,19 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
         #region Aplicar Actualizaciones
 
         /// <summary>
-        /// Aplica las actualizaciones a un usuario (solo los campos que tienen valor)
+        /// Aplica las actualizaciones a un usuario (solo los campos que tienen valor).
+        /// Nota: Nombre, Telefono e Identificacion se manejan desde Cliente.
         /// </summary>
         public static void AplicarActualizaciones(
             Usuario usuario,
-            string? nombre,
-            string? telefono,
-            string? identificacion,
             string? email,
             string? rol)
         {
-            if (!string.IsNullOrWhiteSpace(nombre))
-                usuario.Nombre = nombre;
-
-            if (!string.IsNullOrWhiteSpace(telefono))
-                usuario.Telefono = telefono;
-
-            if (!string.IsNullOrWhiteSpace(identificacion))
-                usuario.Identificacion = identificacion;
-
             if (!string.IsNullOrWhiteSpace(email) && email != usuario.Email)
                 usuario.Email = email;
 
             if (!string.IsNullOrWhiteSpace(rol) && rol != usuario.Rol)
                 usuario.Rol = rol;
-        }
-
-        /// <summary>
-        /// Aplica información adicional después de crear un usuario
-        /// </summary>
-        public static void AplicarInformacionAdicional(Usuario usuario, string? nombre, string? identificacion, string? telefono)
-        {
-            usuario.Nombre = nombre;
-            usuario.Identificacion = identificacion;
-            usuario.Telefono = telefono;
         }
 
         #endregion
@@ -387,10 +366,10 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
         /// Mapea un usuario a DTO de lista
         /// </summary>
         public static UsuarioListaDto MapearAListaDto(Usuario u, int cuentasActivas = 0) => new(
-            u.Id.ToString(),
+            u.Id,
             u.Email,
             u.Rol,
-            u.Nombre ?? u.Email,
+            u.Nombre, // Propiedad calculada: ClienteAsociado?.NombreCompleto ?? Email
             u.Identificacion,
             u.Telefono,
             u.EstaBloqueado,
@@ -412,7 +391,7 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
             u.Id.ToString(),
             u.Email,
             u.Rol,
-            u.Nombre ?? u.Email,
+            u.Nombre,
             u.Identificacion,
             u.Telefono,
             u.EstaBloqueado,
@@ -478,7 +457,7 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
             u.Id.ToString(),
             u.Email,
             u.Rol,
-            u.Nombre ?? u.Email,
+            u.Nombre,
             u.Identificacion,
             u.Telefono
         );

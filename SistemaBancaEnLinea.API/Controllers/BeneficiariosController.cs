@@ -72,6 +72,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// Obtener beneficiario por ID
+        /// RF-C1: Cliente solo puede ver sus propios beneficiarios
         /// </summary>
         [HttpGet("{id}")]
         public async Task<IActionResult> ObtenerBeneficiario(int id)
@@ -81,6 +82,13 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var beneficiario = await _beneficiarioServicio.ObtenerBeneficiarioAsync(id);
                 if (beneficiario == null)
                     return NotFound(new { success = false, message = "Beneficiario no encontrado." });
+
+                // Validar propiedad
+                var clienteId = GetClienteIdFromToken();
+                var userRole = GetUserRole();
+                
+                if (userRole == "Cliente" && beneficiario.ClienteId != clienteId)
+                    return Forbid();
 
                 return Ok(new
                 {
@@ -112,6 +120,17 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
+                // Validar propiedad
+                var beneficiarioExistente = await _beneficiarioServicio.ObtenerBeneficiarioAsync(id);
+                if (beneficiarioExistente == null)
+                    return NotFound(new { success = false, message = "Beneficiario no encontrado." });
+
+                var clienteId = GetClienteIdFromToken();
+                var userRole = GetUserRole();
+                
+                if (userRole == "Cliente" && beneficiarioExistente.ClienteId != clienteId)
+                    return Forbid();
+
                 var beneficiario = await _beneficiarioServicio.ConfirmarBeneficiarioAsync(id);
 
                 return Ok(new
@@ -206,12 +225,24 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// Actualizar alias de beneficiario
+        /// RF-C2: No se puede editar con operaciones pendientes
         /// </summary>
         [HttpPut("{id}")]
         public async Task<IActionResult> ActualizarBeneficiario(int id, [FromBody] ActualizarBeneficiarioRequest request)
         {
             try
             {
+                // Validar propiedad
+                var beneficiarioExistente = await _beneficiarioServicio.ObtenerBeneficiarioAsync(id);
+                if (beneficiarioExistente == null)
+                    return NotFound(new { success = false, message = "Beneficiario no encontrado." });
+
+                var clienteId = GetClienteIdFromToken();
+                var userRole = GetUserRole();
+                
+                if (userRole == "Cliente" && beneficiarioExistente.ClienteId != clienteId)
+                    return Forbid();
+
                 var beneficiario = await _beneficiarioServicio.ActualizarBeneficiarioAsync(id, request.Alias);
 
                 return Ok(new
@@ -238,12 +269,24 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// Eliminar beneficiario
+        /// RF-C2: No se puede eliminar con operaciones pendientes
         /// </summary>
         [HttpDelete("{id}")]
         public async Task<IActionResult> EliminarBeneficiario(int id)
         {
             try
             {
+                // Validar propiedad
+                var beneficiarioExistente = await _beneficiarioServicio.ObtenerBeneficiarioAsync(id);
+                if (beneficiarioExistente == null)
+                    return NotFound(new { success = false, message = "Beneficiario no encontrado." });
+
+                var clienteId = GetClienteIdFromToken();
+                var userRole = GetUserRole();
+                
+                if (userRole == "Cliente" && beneficiarioExistente.ClienteId != clienteId)
+                    return Forbid();
+
                 await _beneficiarioServicio.EliminarBeneficiarioAsync(id);
                 return Ok(new { success = true, message = "Beneficiario eliminado." });
             }
@@ -261,6 +304,13 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             var clienteIdClaim = User.FindFirst("client_id")?.Value;
             return int.TryParse(clienteIdClaim, out var clienteId) ? clienteId : 0;
+        }
+
+        private string GetUserRole()
+        {
+            return User.FindFirst("role")?.Value
+                ?? User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                ?? "Cliente";
         }
     }
 

@@ -46,7 +46,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                         saldo = c.Saldo,
                         estado = c.Estado,
                         clienteId = c.ClienteId,
-                        clienteNombre = c.Cliente?.NombreCompleto,
+                        clienteNombre = c.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
                         fechaApertura = c.FechaApertura ?? DateTime.UtcNow,
                         limiteDiario = 500000m,
                         saldoDisponible = c.Saldo
@@ -63,6 +63,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         /// <summary>
         /// GET: api/accounts/{id}
         /// Obtiene los detalles de una cuenta específica
+        /// RF-B1: Cliente solo puede ver sus propias cuentas
         /// </summary>
         [HttpGet("{id}")]
         public async Task<IActionResult> GetAccount(int id)
@@ -72,6 +73,16 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var cuenta = await _cuentaServicio.ObtenerCuentaAsync(id);
                 if (cuenta == null)
                     return NotFound(new { success = false, message = "Cuenta no encontrada" });
+
+                // Validar propiedad: Cliente solo puede ver sus propias cuentas
+                var clienteIdClaim = User.FindFirst("client_id")?.Value;
+                var userRole = User.FindFirst("role")?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "Cliente";
+                
+                if (userRole == "Cliente")
+                {
+                    if (!int.TryParse(clienteIdClaim, out var clienteId) || cuenta.ClienteId != clienteId)
+                        return Forbid();
+                }
 
                 return Ok(new
                 {
@@ -152,15 +163,33 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// PUT: api/accounts/{id}/block
-        /// Bloquea una cuenta
+        /// Bloquea una cuenta (solo Admin/Gestor o el propio cliente)
         /// </summary>
         [HttpPut("{id}/block")]
         public async Task<IActionResult> BlockAccount(int id)
         {
             try
             {
+                var cuenta = await _cuentaServicio.ObtenerCuentaAsync(id);
+                if (cuenta == null)
+                    return NotFound(new { success = false, message = "Cuenta no encontrada" });
+
+                // Validar propiedad
+                var clienteIdClaim = User.FindFirst("client_id")?.Value;
+                var userRole = User.FindFirst("role")?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "Cliente";
+                
+                if (userRole == "Cliente")
+                {
+                    if (!int.TryParse(clienteIdClaim, out var clienteId) || cuenta.ClienteId != clienteId)
+                        return Forbid();
+                }
+
                 await _cuentaServicio.BloquearCuentaAsync(id);
                 return Ok(new { success = true, message = "Cuenta bloqueada" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
             }
             catch (Exception ex)
             {
@@ -170,15 +199,33 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// PUT: api/accounts/{id}/close
-        /// Cierra una cuenta
+        /// Cierra una cuenta (solo Admin/Gestor o el propio cliente)
         /// </summary>
         [HttpPut("{id}/close")]
         public async Task<IActionResult> CloseAccount(int id)
         {
             try
             {
+                var cuenta = await _cuentaServicio.ObtenerCuentaAsync(id);
+                if (cuenta == null)
+                    return NotFound(new { success = false, message = "Cuenta no encontrada" });
+
+                // Validar propiedad
+                var clienteIdClaim = User.FindFirst("client_id")?.Value;
+                var userRole = User.FindFirst("role")?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "Cliente";
+                
+                if (userRole == "Cliente")
+                {
+                    if (!int.TryParse(clienteIdClaim, out var clienteId) || cuenta.ClienteId != clienteId)
+                        return Forbid();
+                }
+
                 await _cuentaServicio.CerrarCuentaAsync(id);
                 return Ok(new { success = true, message = "Cuenta cerrada" });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(new { success = false, message = ex.Message });
             }
             catch (Exception ex)
             {

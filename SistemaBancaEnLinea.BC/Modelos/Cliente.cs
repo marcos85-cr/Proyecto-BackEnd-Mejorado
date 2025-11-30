@@ -6,20 +6,9 @@ namespace SistemaBancaEnLinea.BC.Modelos
     {
         public int Id { get; set; }
 
-        // RF-A3: Identificación única
-        [Required]
-        public string Identificacion { get; set; } = string.Empty;
-
-        // RF-A3: Nombre completo
-        [Required]
-        public string NombreCompleto { get; set; } = string.Empty;
-
-        // RF-A3: Teléfono
-        public string? Telefono { get; set; }
-
-        // RF-A3: Correo
-        [EmailAddress]
-        public string? Correo { get; set; }
+        // Atributos únicos del cliente (datos personales están en Usuario)
+        public string? Direccion { get; set; }
+        public DateTime? FechaNacimiento { get; set; }
 
         // Estado del cliente
         public string Estado { get; set; } = "Activo";

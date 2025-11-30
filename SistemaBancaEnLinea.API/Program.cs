@@ -85,6 +85,7 @@ builder.Services.AddScoped<IPagosServiciosServicio, PagosServiciosServicio>();
 builder.Services.AddScoped<IProgramacionServicio, ProgramacionServicio>();
 builder.Services.AddScoped<IProveedorServicioServicio, ProveedorServicioServicio>();
 builder.Services.AddScoped<IAuditoriaServicio, AuditoriaServicio>();
+builder.Services.AddScoped<IReportesServicio, ReportesServicio>();
 
 // 6. Registrar Casos de Uso
 builder.Services.AddScoped<GestionCuentasCU>();

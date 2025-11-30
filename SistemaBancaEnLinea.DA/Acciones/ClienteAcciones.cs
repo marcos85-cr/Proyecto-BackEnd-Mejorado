@@ -25,13 +25,14 @@ namespace SistemaBancaEnLinea.DA.Acciones
         {
             return await _context.Clientes
                 .Include(c => c.Cuentas)
-                .FirstOrDefaultAsync(c => c.Identificacion == identificacion);
+                .Include(c => c.UsuarioAsociado)
+                .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Identificacion == identificacion);
         }
 
         public async Task<bool> ExisteIdentificacionAsync(string identificacion)
         {
-            return await _context.Clientes
-                .AnyAsync(c => c.Identificacion == identificacion);
+            return await _context.Usuarios
+                .AnyAsync(u => u.Identificacion == identificacion);
         }
 
         public async Task<Cliente> CrearAsync(Cliente cliente)
@@ -60,6 +61,30 @@ namespace SistemaBancaEnLinea.DA.Acciones
                 .Where(c => c.GestorAsignadoId == gestorId)
                 .Include(c => c.Cuentas)
                 .ToListAsync();
+        }
+
+        public async Task<bool> TieneCuentasAsync(int clienteId)
+        {
+            return await _context.Cuentas
+                .AnyAsync(c => c.ClienteId == clienteId);
+        }
+
+        public async Task<bool> TieneBeneficiariosAsync(int clienteId)
+        {
+            return await _context.Beneficiarios
+                .AnyAsync(b => b.ClienteId == clienteId);
+        }
+
+        public async Task<bool> TieneTransaccionesAsync(int clienteId)
+        {
+            return await _context.Transacciones
+                .AnyAsync(t => t.ClienteId == clienteId);
+        }
+
+        public async Task EliminarAsync(Cliente cliente)
+        {
+            _context.Clientes.Remove(cliente);
+            await _context.SaveChangesAsync();
         }
     }
 }

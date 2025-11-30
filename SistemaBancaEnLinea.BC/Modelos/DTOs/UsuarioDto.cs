@@ -4,7 +4,7 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
     /// DTO para lista de usuarios
     /// </summary>
     public record UsuarioListaDto(
-        string Id,
+        int Id,
         string Email,
         string Role,
         string Nombre,

@@ -131,7 +131,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     {
                         id = op.Id.ToString(),
                         clienteId = op.ClienteId.ToString(),
-                        clienteNombre = op.Cliente?.NombreCompleto ?? "N/A",
+                        clienteNombre = op.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
                         tipo = op.Tipo,
                         descripcion = op.Descripcion,
                         monto = op.Monto,
@@ -191,10 +191,10 @@ namespace SistemaBancaEnLinea.API.Controllers
                     clientesResponse.Add(new
                     {
                         id = cliente.Id.ToString(),
-                        nombre = cliente.NombreCompleto,
-                        email = cliente.Correo,
-                        identificacion = cliente.Identificacion,
-                        telefono = cliente.Telefono,
+                        nombre = cliente.UsuarioAsociado?.Nombre ?? "N/A",
+                        email = cliente.UsuarioAsociado?.Email ?? "N/A",
+                        identificacion = cliente.UsuarioAsociado?.Identificacion ?? "N/A",
+                        telefono = cliente.UsuarioAsociado?.Telefono ?? "N/A",
                         cuentasActivas = cuentasActivas.Count,
                         ultimaOperacion = ultimaOperacion?.FechaCreacion ?? cliente.FechaRegistro,
                         estado = cliente.Estado,
@@ -253,12 +253,12 @@ namespace SistemaBancaEnLinea.API.Controllers
                     data = new
                     {
                         id = cliente.Id,
-                        identificacion = cliente.Identificacion,
-                        nombre = cliente.NombreCompleto,
-                        nombreCompleto = cliente.NombreCompleto,
-                        telefono = cliente.Telefono,
-                        correo = cliente.Correo,
-                        email = cliente.Correo,
+                        identificacion = cliente.UsuarioAsociado?.Identificacion ?? "N/A",
+                        nombre = cliente.UsuarioAsociado?.Nombre ?? "N/A",
+                        nombreCompleto = cliente.UsuarioAsociado?.Nombre ?? "N/A",
+                        telefono = cliente.UsuarioAsociado?.Telefono ?? "N/A",
+                        correo = cliente.UsuarioAsociado?.Email ?? "N/A",
+                        email = cliente.UsuarioAsociado?.Email ?? "N/A",
                         estado = cliente.Estado,
                         fechaRegistro = cliente.FechaRegistro,
                         ultimaOperacion = ultimaOperacion?.FechaCreacion,
@@ -321,7 +321,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                         estado = c.Estado,
                         fechaApertura = c.FechaApertura ?? DateTime.UtcNow,
                         clienteId = c.ClienteId,
-                        clienteNombre = cliente.NombreCompleto
+                        clienteNombre = cliente.UsuarioAsociado?.Nombre ?? "N/A"
                     })
                 });
             }
@@ -422,7 +422,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 // Registrar auditoría
                 await _auditoriaServicio.RegistrarAsync(gestorId, "CreacionCuentaPorGestor",
-                    $"Gestor creó cuenta {cuenta.Numero} para cliente {cliente.NombreCompleto}");
+                    $"Gestor creó cuenta {cuenta.Numero} para cliente {cliente.UsuarioAsociado?.Nombre ?? "N/A"}");
 
                 return CreatedAtAction(nameof(GetCuentasCliente), new { clienteId = clienteId }, new
                 {
@@ -438,7 +438,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                         saldo = cuenta.Saldo,
                         estado = cuenta.Estado,
                         clienteId = clienteId,
-                        cliente = cliente.NombreCompleto,
+                        cliente = cliente.UsuarioAsociado?.Nombre ?? "N/A",
                         fechaApertura = cuenta.FechaApertura
                     }
                 });
@@ -504,7 +504,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 {
                     var searchTerm = clientName.ToLower().Trim();
                     operacionesFiltradas = operacionesFiltradas.Where(op =>
-                        op.Cliente != null && op.Cliente.NombreCompleto.ToLower().Contains(searchTerm));
+                        op.Cliente != null && op.Cliente.UsuarioAsociado != null && (op.Cliente.UsuarioAsociado.Nombre ?? "").ToLower().Contains(searchTerm));
                 }
 
                 if (!string.IsNullOrEmpty(operationType))
@@ -528,7 +528,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     {
                         id = op.Id.ToString(),
                         clienteId = op.ClienteId.ToString(),
-                        clienteNombre = op.Cliente?.NombreCompleto ?? "N/A",
+                        clienteNombre = op.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
                         tipo = op.Tipo,
                         descripcion = op.Descripcion,
                         monto = op.Monto,
@@ -584,7 +584,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     {
                         id = operacion.Id.ToString(),
                         clienteId = operacion.ClienteId.ToString(),
-                        clienteNombre = operacion.Cliente?.NombreCompleto ?? "N/A",
+                        clienteNombre = operacion.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
                         tipo = operacion.Tipo,
                         descripcion = operacion.Descripcion,
                         monto = operacion.Monto,

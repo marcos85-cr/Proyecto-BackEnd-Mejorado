@@ -27,6 +27,20 @@ namespace SistemaBancaEnLinea.DA.Config
                 .IsRequired()
                 .HasMaxLength(50);
 
+            builder.Property(u => u.Nombre)
+                .IsRequired()
+                .HasMaxLength(200);
+
+            builder.Property(u => u.Identificacion)
+                .HasMaxLength(50);
+
+            builder.HasIndex(u => u.Identificacion)
+                .IsUnique()
+                .HasFilter("[Identificacion] IS NOT NULL");
+
+            builder.Property(u => u.Telefono)
+                .HasMaxLength(20);
+
             builder.Property(u => u.IntentosFallidos)
                 .HasDefaultValue(0);
 

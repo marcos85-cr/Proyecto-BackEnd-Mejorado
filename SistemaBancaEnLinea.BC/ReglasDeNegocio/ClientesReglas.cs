@@ -1,58 +1,159 @@
-﻿namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
+﻿using SistemaBancaEnLinea.BC.Modelos;
+using SistemaBancaEnLinea.BC.Modelos.DTOs;
+using static SistemaBancaEnLinea.BC.ReglasDeNegocio.ConstantesGenerales;
+
+namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
 {
     /// <summary>
     /// RF-A3: Gestión de datos de cliente
     /// </summary>
     public static class ClientesReglas
     {
-        // RF-A3: Validaciones de cliente
-        public const int LONGITUD_MINIMA_IDENTIFICACION = 5;
-        public const int LONGITUD_MAXIMA_IDENTIFICACION = 50;
+        // ==================== VALIDACIONES ====================
 
-        public const int LONGITUD_MINIMA_NOMBRE = 5;
-        public const int LONGITUD_MAXIMA_NOMBRE = 200;
-
-        public static bool ValidarIdentificacion(string identificacion)
+        public static (bool esValido, string? error) ValidarClienteRequest(ClienteRequest request)
         {
-            if (string.IsNullOrWhiteSpace(identificacion))
-                return false;
+            if (request.UsuarioId <= 0)
+                return (false, "El UsuarioId es obligatorio para crear un cliente.");
 
-            return identificacion.Length >= LONGITUD_MINIMA_IDENTIFICACION &&
-                   identificacion.Length <= LONGITUD_MAXIMA_IDENTIFICACION;
+            return (true, null);
         }
 
-        public static bool ValidarNombreCompleto(string nombre)
+        public static (bool esValido, string? error) ValidarActualizarRequest(ClienteActualizarRequest request)
         {
-            if (string.IsNullOrWhiteSpace(nombre))
-                return false;
-
-            return nombre.Length >= LONGITUD_MINIMA_NOMBRE &&
-                   nombre.Length <= LONGITUD_MAXIMA_NOMBRE;
+            // No hay validaciones obligatorias, todos los campos son opcionales
+            return (true, null);
         }
 
-        public static bool ValidarTelefono(string? telefono)
-        {
-            if (string.IsNullOrWhiteSpace(telefono))
-                return true; // Es opcional
+        // ==================== MAPEOS A DTOs ====================
 
-            // Validar que contenga solo dígitos y caracteres de formato
-            return System.Text.RegularExpressions.Regex.IsMatch(telefono, @"^[\d\-\+\s]+$");
+        public static ClienteListaDto MapearAListaDto(Cliente cliente)
+        {
+            var usuario = cliente.UsuarioAsociado;
+            return new ClienteListaDto(
+                cliente.Id,
+                usuario?.Id ?? 0,
+                usuario?.Identificacion ?? "",
+                usuario?.Nombre ?? "",
+                usuario?.Telefono,
+                usuario?.Email ?? "",
+                cliente.Direccion,
+                cliente.FechaNacimiento,
+                cliente.Estado,
+                cliente.FechaRegistro,
+                cliente.Cuentas?.Count(c => c.Estado == ESTADO_CUENTA_ACTIVA) ?? 0,
+                cliente.GestorAsignadoId,
+                cliente.GestorAsignado?.Nombre ?? cliente.GestorAsignado?.Email
+            );
         }
 
-        public static bool ValidarCorreo(string? correo)
+        public static IEnumerable<ClienteListaDto> MapearAListaDto(IEnumerable<Cliente> clientes)
         {
-            if (string.IsNullOrWhiteSpace(correo))
-                return true; // Es opcional
+            return clientes.Select(MapearAListaDto);
+        }
 
-            try
-            {
-                var addr = new System.Net.Mail.MailAddress(correo);
-                return addr.Address == correo;
-            }
-            catch
-            {
-                return false;
-            }
+        public static ClienteDetalleDto MapearADetalleDto(Cliente cliente, List<Cuenta> cuentas)
+        {
+            var cuentasActivas = cuentas.Count(c => c.Estado == ESTADO_CUENTA_ACTIVA);
+            var saldoTotal = cuentas.Where(c => c.Estado == ESTADO_CUENTA_ACTIVA).Sum(c => c.Saldo);
+            var usuario = cliente.UsuarioAsociado;
+            
+            return new ClienteDetalleDto(
+                cliente.Id,
+                usuario?.Id ?? 0,
+                usuario?.Identificacion ?? "",
+                usuario?.Nombre ?? "",
+                usuario?.Telefono,
+                usuario?.Email ?? "",
+                cliente.Direccion,
+                cliente.FechaNacimiento,
+                cliente.Estado,
+                cliente.FechaRegistro,
+                cliente.UltimaOperacion,
+                cuentasActivas,
+                saldoTotal,
+                usuario != null 
+                    ? new UsuarioVinculadoDto(
+                        usuario.Id,
+                        usuario.Email,
+                        usuario.Nombre,
+                        usuario.Identificacion,
+                        usuario.Telefono,
+                        usuario.Rol,
+                        usuario.EstaBloqueado)
+                    : null,
+                cliente.GestorAsignado != null
+                    ? new GestorAsignadoDto(
+                        cliente.GestorAsignado.Id,
+                        cliente.GestorAsignado.Nombre,
+                        cliente.GestorAsignado.Email)
+                    : null,
+                cuentas.Select(c => new CuentaClienteDto(
+                    c.Id,
+                    c.Numero,
+                    c.Tipo,
+                    c.Moneda,
+                    c.Saldo,
+                    c.Estado
+                )).ToList()
+            );
+        }
+
+        public static ClienteCreacionDto MapearACreacionDto(Cliente cliente)
+        {
+            var usuario = cliente.UsuarioAsociado;
+            return new ClienteCreacionDto(
+                cliente.Id,
+                usuario?.Id ?? 0,
+                usuario?.Identificacion ?? "",
+                usuario?.Nombre ?? "",
+                usuario?.Telefono,
+                usuario?.Email ?? "",
+                cliente.Direccion,
+                cliente.FechaNacimiento,
+                cliente.Estado,
+                cliente.FechaRegistro,
+                cliente.GestorAsignadoId,
+                cliente.Cuentas?.Select(c => new CuentaCreadaDto(
+                    c.Id,
+                    c.Numero,
+                    c.Tipo,
+                    c.Moneda,
+                    c.Saldo,
+                    c.Estado
+                )).ToList() ?? new List<CuentaCreadaDto>()
+            );
+        }
+
+        public static ClienteActualizacionDto MapearAActualizacionDto(Cliente cliente)
+        {
+            return new ClienteActualizacionDto(
+                cliente.Id,
+                cliente.Direccion,
+                cliente.FechaNacimiento,
+                cliente.GestorAsignadoId,
+                cliente.GestorAsignado?.Nombre ?? cliente.GestorAsignado?.Email
+            );
+        }
+
+        public static ClientePerfilDto MapearAPerfilDto(Cliente cliente, int cuentasActivas, decimal saldoTotal)
+        {
+            var usuario = cliente.UsuarioAsociado;
+            return new ClientePerfilDto(
+                cliente.Id,
+                usuario?.Id ?? 0,
+                usuario?.Identificacion ?? "",
+                usuario?.Nombre ?? "",
+                usuario?.Telefono,
+                usuario?.Email ?? "",
+                cliente.Direccion,
+                cliente.FechaNacimiento,
+                cliente.Estado,
+                cliente.FechaRegistro,
+                cliente.UltimaOperacion,
+                cuentasActivas,
+                saldoTotal
+            );
         }
     }
 }

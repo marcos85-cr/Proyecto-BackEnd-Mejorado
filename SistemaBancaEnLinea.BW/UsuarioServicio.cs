@@ -71,9 +71,6 @@ namespace SistemaBancaEnLinea.BW
             // Obtener clienteId si aplica
             int? clienteId = await ObtenerClienteIdAsync(usuario);
 
-            // Sincronizar datos del cliente si existe
-            SincronizarDatosCliente(usuario);
-
             var token = GenerarToken(usuario, clienteId);
             return ResultadoLogin.Exito(token, usuario);
         }
@@ -139,24 +136,58 @@ namespace SistemaBancaEnLinea.BW
             if (await ExisteEmailAsync(request.Email))
                 return ResultadoOperacion<Usuario>.Fallo("El correo electrónico ya está registrado.");
 
-            // Crear usuario
-            var usuario = new Usuario
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
             {
-                Email = request.Email,
-                PasswordHash = HashPassword(request.Password!),
-                Rol = request.Role,
-                Nombre = request.Nombre,
-                Identificacion = request.Identificacion,
-                Telefono = request.Telefono,
-                IntentosFallidos = 0,
-                EstaBloqueado = false,
-                FechaCreacion = DateTime.UtcNow
-            };
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
-            _context.Usuarios.Add(usuario);
-            await _context.SaveChangesAsync();
+                try
+                {
+                    // Crear usuario
+                    var usuario = new Usuario
+                    {
+                        Email = request.Email,
+                        PasswordHash = HashPassword(request.Password!),
+                        Rol = request.Role,
+                        Nombre = request.Nombre ?? request.Email,
+                        Identificacion = request.Identificacion,
+                        Telefono = request.Telefono,
+                        IntentosFallidos = 0,
+                        EstaBloqueado = false,
+                        FechaCreacion = DateTime.UtcNow
+                    };
 
-            return ResultadoOperacion<Usuario>.Exito(usuario);
+                    _context.Usuarios.Add(usuario);
+                    await _context.SaveChangesAsync();
+
+                    // Si es rol Cliente, crear un Cliente asociado
+                    if (request.Role == "Cliente")
+                    {
+                        var cliente = new Cliente
+                        {
+                            Estado = "Activo",
+                            FechaRegistro = DateTime.UtcNow,
+                            UsuarioAsociado = usuario
+                        };
+                        _context.Clientes.Add(cliente);
+                        await _context.SaveChangesAsync();
+
+                        usuario.ClienteId = cliente.Id;
+                        await _context.SaveChangesAsync();
+                    }
+
+                    await transaction.CommitAsync();
+                    return ResultadoOperacion<Usuario>.Exito(usuario);
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    var innerMessage = ex.InnerException?.Message ?? ex.Message;
+                    return ResultadoOperacion<Usuario>.Fallo($"Error al crear usuario: {innerMessage}");
+                }
+            });
         }
 
         /// <summary>
@@ -193,17 +224,46 @@ namespace SistemaBancaEnLinea.BW
             if (!validacion.EsValido)
                 return ResultadoOperacion<Usuario>.Fallo(validacion.Mensaje);
 
-            // Aplicar actualizaciones usando reglas BC
-            UsuarioReglas.AplicarActualizaciones(
-                usuario,
-                request.Nombre,
-                request.Telefono,
-                request.Identificacion,
-                request.Email,
-                request.Role);
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            await _context.SaveChangesAsync();
-            return ResultadoOperacion<Usuario>.Exito(usuario);
+            return await strategy.ExecuteAsync(async () =>
+            {
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    // Re-obtener usuario dentro de la transacción
+                    var usuarioTx = await _context.Usuarios.FindAsync(id);
+                    if (usuarioTx == null)
+                        return ResultadoOperacion<Usuario>.Fallo("Usuario no encontrado.");
+
+                    // Aplicar actualizaciones usando reglas BC (solo email y rol)
+                    UsuarioReglas.AplicarActualizaciones(
+                        usuarioTx,
+                        request.Email,
+                        request.Role);
+
+                    // Actualizar datos personales en usuario
+                    if (!string.IsNullOrWhiteSpace(request.Nombre))
+                        usuarioTx.Nombre = request.Nombre;
+                    if (!string.IsNullOrWhiteSpace(request.Telefono))
+                        usuarioTx.Telefono = request.Telefono;
+                    if (!string.IsNullOrWhiteSpace(request.Identificacion))
+                        usuarioTx.Identificacion = request.Identificacion;
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return ResultadoOperacion<Usuario>.Exito(usuarioTx);
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    var innerMessage = ex.InnerException?.Message ?? ex.Message;
+                    return ResultadoOperacion<Usuario>.Fallo($"Error al actualizar usuario: {innerMessage}");
+                }
+            });
         }
 
         /// <summary>
@@ -224,8 +284,6 @@ namespace SistemaBancaEnLinea.BW
                 var validacion = UsuarioReglas.PuedeBloquearUsuario(usuario, adminId);
                 if (!validacion.EsValido)
                     return ResultadoOperacion<Usuario>.Fallo(validacion.Mensaje);
-
-                UsuarioReglas.AplicarBloqueo(usuario);
             }
             else
             {
@@ -233,12 +291,37 @@ namespace SistemaBancaEnLinea.BW
                 var validacion = UsuarioReglas.PuedeDesbloquearUsuario(usuario);
                 if (!validacion.EsValido)
                     return ResultadoOperacion<Usuario>.Fallo(validacion.Mensaje);
-
-                UsuarioReglas.AplicarDesbloqueo(usuario);
             }
 
-            await _context.SaveChangesAsync();
-            return ResultadoOperacion<Usuario>.Exito(usuario);
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
+            {
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    var usuarioTx = await _context.Usuarios.FindAsync(usuarioId);
+                    if (usuarioTx == null)
+                        return ResultadoOperacion<Usuario>.Fallo("Usuario no encontrado.");
+
+                    if (nuevoEstado)
+                        UsuarioReglas.AplicarBloqueo(usuarioTx);
+                    else
+                        UsuarioReglas.AplicarDesbloqueo(usuarioTx);
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return ResultadoOperacion<Usuario>.Exito(usuarioTx);
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    var innerMessage = ex.InnerException?.Message ?? ex.Message;
+                    return ResultadoOperacion<Usuario>.Fallo($"Error al cambiar estado de bloqueo: {innerMessage}");
+                }
+            });
         }
 
         /// <summary>
@@ -270,11 +353,31 @@ namespace SistemaBancaEnLinea.BW
             if (!validacion.EsValido)
                 return ResultadoOperacion<bool>.Fallo(validacion.Mensaje);
 
-            // Aplicar cambio
-            usuario.PasswordHash = HashPassword(nuevaContrasena);
-            await _context.SaveChangesAsync();
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            return ResultadoOperacion<bool>.Exito(true);
+            return await strategy.ExecuteAsync(async () =>
+            {
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    var usuarioTx = await _context.Usuarios.FindAsync(usuarioId);
+                    if (usuarioTx == null)
+                        return ResultadoOperacion<bool>.Fallo("Usuario no encontrado.");
+
+                    usuarioTx.PasswordHash = HashPassword(nuevaContrasena);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return ResultadoOperacion<bool>.Exito(true);
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    var innerMessage = ex.InnerException?.Message ?? ex.Message;
+                    return ResultadoOperacion<bool>.Fallo($"Error al cambiar contraseña: {innerMessage}");
+                }
+            });
         }
 
         /// <summary>
@@ -300,11 +403,31 @@ namespace SistemaBancaEnLinea.BW
             if (!string.IsNullOrEmpty(referencias))
                 return ResultadoOperacion<bool>.Fallo($"No se puede eliminar el usuario. {referencias}");
 
-            // Eliminar usuario
-            _context.Usuarios.Remove(usuario);
-            await _context.SaveChangesAsync();
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            return ResultadoOperacion<bool>.Exito(true);
+            return await strategy.ExecuteAsync(async () =>
+            {
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    var usuarioTx = await _context.Usuarios.FindAsync(usuarioId);
+                    if (usuarioTx == null)
+                        return ResultadoOperacion<bool>.Fallo("Usuario no encontrado.");
+
+                    _context.Usuarios.Remove(usuarioTx);
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return ResultadoOperacion<bool>.Exito(true);
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    var innerMessage = ex.InnerException?.Message ?? ex.Message;
+                    return ResultadoOperacion<bool>.Fallo($"Error al eliminar usuario: {innerMessage}");
+                }
+            });
         }
 
         /// <summary>
@@ -379,18 +502,6 @@ namespace SistemaBancaEnLinea.BW
             var cliente = await _context.Clientes
                 .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuario.Id);
             return cliente?.Id;
-        }
-
-        /// <summary>
-        /// Sincroniza los datos del cliente en el usuario
-        /// </summary>
-        private static void SincronizarDatosCliente(Usuario usuario)
-        {
-            if (usuario.ClienteAsociado == null) return;
-
-            usuario.Nombre = usuario.ClienteAsociado.NombreCompleto;
-            usuario.Identificacion = usuario.ClienteAsociado.Identificacion;
-            usuario.Telefono = usuario.ClienteAsociado.Telefono;
         }
 
         #endregion
