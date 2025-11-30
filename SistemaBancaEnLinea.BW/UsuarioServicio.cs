@@ -162,13 +162,18 @@ namespace SistemaBancaEnLinea.BW
         /// <summary>
         /// Actualiza un usuario con todas las validaciones
         /// Incluye: validación de existencia, email único, campos válidos
+        /// Restricción: No puede cambiar su propio rol
         /// </summary>
-        public async Task<ResultadoOperacion<Usuario>> ActualizarUsuarioAsync(int id, UsuarioRequest request)
+        public async Task<ResultadoOperacion<Usuario>> ActualizarUsuarioAsync(int id, UsuarioRequest request, int solicitanteId)
         {
             // Buscar usuario existente
             var usuario = await ObtenerPorIdAsync(id);
             if (usuario == null)
                 return ResultadoOperacion<Usuario>.Fallo("Usuario no encontrado.");
+
+            // Restricción: No puede cambiar su propio rol
+            if (id == solicitanteId && !string.IsNullOrWhiteSpace(request.Role) && request.Role != usuario.Rol)
+                return ResultadoOperacion<Usuario>.Fallo("No puede cambiar su propio rol.");
 
             // Verificar email único si se está cambiando
             bool nuevoEmailExiste = !string.IsNullOrWhiteSpace(request.Email)

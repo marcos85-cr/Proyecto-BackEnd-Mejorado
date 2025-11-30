@@ -93,7 +93,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var resultado = await _usuarioServicio.ActualizarUsuarioAsync(id, request);
+                var resultado = await _usuarioServicio.ActualizarUsuarioAsync(id, request, GetCurrentUserId());
 
                 if (!resultado.Exitoso)
                     return BadRequest(ApiResponse.Fail(resultado.Error!));

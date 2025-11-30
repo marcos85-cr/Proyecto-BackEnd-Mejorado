@@ -51,8 +51,9 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
 
         /// <summary>
         /// Actualiza un usuario existente con todas las validaciones de negocio
+        /// Restricción: No puede cambiar su propio rol
         /// </summary>
-        Task<ResultadoOperacion<Usuario>> ActualizarUsuarioAsync(int id, UsuarioRequest request);
+        Task<ResultadoOperacion<Usuario>> ActualizarUsuarioAsync(int id, UsuarioRequest request, int solicitanteId);
 
         /// <summary>
         /// Bloquea o desbloquea un usuario con validaciones de permisos
