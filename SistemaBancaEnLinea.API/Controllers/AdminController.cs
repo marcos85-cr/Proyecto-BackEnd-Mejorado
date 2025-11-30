@@ -197,6 +197,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// RF-G2: Obtener registros de auditoría
+        /// Restricción: No puede ver auditoría de otros administradores
         /// </summary>
         [HttpGet("auditoria")]
         public async Task<IActionResult> ObtenerAuditoria(
@@ -208,8 +209,21 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var inicio = fechaInicio ?? DateTime.UtcNow.AddDays(-30);
                 var fin = fechaFin ?? DateTime.UtcNow;
+                var currentAdminId = GetCurrentUserId();
 
                 var registros = await _auditoriaServicio.ObtenerPorFechasAsync(inicio, fin, tipoOperacion);
+                
+                // Obtener IDs de otros administradores
+                var otrosAdmins = await _usuarioServicio.ObtenerPorRolAsync("Administrador");
+                var otrosAdminIds = otrosAdmins
+                    .Where(a => a.Id != currentAdminId)
+                    .Select(a => a.Id)
+                    .ToHashSet();
+                
+                // Filtrar registros de otros administradores (solo ve los propios y los de no-admins)
+                registros = registros
+                    .Where(r => !otrosAdminIds.Contains(r.UsuarioId))
+                    .ToList();
 
                 return Ok(new
                 {
@@ -234,12 +248,22 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// Obtener registros de auditoría por usuario
+        /// Restricción: No puede ver auditoría de otros administradores
         /// </summary>
         [HttpGet("auditoria/usuario/{usuarioId}")]
         public async Task<IActionResult> ObtenerAuditoriaUsuario(int usuarioId)
         {
             try
             {
+                var currentAdminId = GetCurrentUserId();
+                
+                // Verificar si el usuario solicitado es otro administrador
+                var usuarios = await _usuarioServicio.ObtenerPorRolAsync("Administrador");
+                var esOtroAdmin = usuarios.Any(u => u.Id == usuarioId && u.Id != currentAdminId);
+                
+                if (esOtroAdmin)
+                    return StatusCode(403, new { success = false, message = "No puede acceder a reportes de otros administradores." });
+
                 var registros = await _auditoriaServicio.ObtenerPorUsuarioAsync(usuarioId);
 
                 return Ok(new

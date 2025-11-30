@@ -10,7 +10,10 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
         decimal Saldo,
         string Estado,
         DateTime? FechaApertura,
-        string? Titular = null
+        string? Titular = null,
+        int? ClienteId = null,
+        decimal LimiteDiario = 500000m,
+        decimal? SaldoDisponible = null
     );
 
     public record CuentaDetalleDto(
@@ -25,10 +28,71 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
         string Titular
     );
 
+    /// <summary>
+    /// DTO completo de cuenta con todas sus relaciones
+    /// </summary>
+    public record CuentaCompletaDto(
+        int Id,
+        string Numero,
+        string Tipo,
+        string Moneda,
+        decimal Saldo,
+        string Estado,
+        DateTime? FechaApertura,
+        CuentaRelacionClienteDto? Cliente,
+        CuentaRelacionUsuarioDto? Usuario,
+        CuentaRelacionGestorDto? Gestor
+    );
+
+    public record CuentaRelacionClienteDto(
+        int Id,
+        string? Direccion,
+        DateTime? FechaNacimiento,
+        string Estado,
+        DateTime FechaRegistro
+    );
+
+    public record CuentaRelacionUsuarioDto(
+        int Id,
+        string Nombre,
+        string Email,
+        string? Telefono,
+        string? Identificacion,
+        string Rol
+    );
+
+    public record CuentaRelacionGestorDto(
+        int Id,
+        string Nombre,
+        string Email
+    );
+
     public record CrearCuentaRequest(
         string Tipo,
         string Moneda,
         decimal SaldoInicial = 0
+    );
+
+    public record CuentaCreacionDto(
+        int Id,
+        string Numero,
+        string Tipo,
+        string Moneda,
+        decimal Saldo,
+        string Estado
+    );
+
+    public record CuentaBalanceDto(
+        decimal Saldo,
+        decimal Disponible,
+        string Moneda
+    );
+
+    public record CuentaEstadoDto(
+        int Id,
+        string Numero,
+        string Estado,
+        string Mensaje
     );
 
     // ==================== BENEFICIARIO ====================

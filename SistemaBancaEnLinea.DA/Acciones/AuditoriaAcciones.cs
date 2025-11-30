@@ -16,9 +16,24 @@ namespace SistemaBancaEnLinea.DA.Acciones
         {
             try
             {
+                // Si no hay usuarioId válido, buscar el admin por defecto
+                if (usuarioId <= 0)
+                {
+                    var adminUser = await _context.Usuarios.FirstOrDefaultAsync(u => u.Rol == "Administrador");
+                    usuarioId = adminUser?.Id ?? 1;
+                }
+
+                // Verificar que el usuario existe
+                var usuarioExiste = await _context.Usuarios.AnyAsync(u => u.Id == usuarioId);
+                if (!usuarioExiste)
+                {
+                    var adminUser = await _context.Usuarios.FirstOrDefaultAsync();
+                    usuarioId = adminUser?.Id ?? throw new Exception("No hay usuarios en el sistema");
+                }
+
                 var registro = new RegistroAuditoria
                 {
-                    UsuarioId = usuarioId != 0 ? usuarioId : 1,
+                    UsuarioId = usuarioId,
                     TipoOperacion = tipoOperacion,
                     Descripcion = descripcion,
                     DetalleJson = detalleJson,
@@ -30,10 +45,9 @@ namespace SistemaBancaEnLinea.DA.Acciones
             }
             catch (Exception ex)
             {
-                // Manejo de errores (puede ser logging, rethrow, etc.)
-                throw new Exception("Error registrando auditoría", ex);
+                // Log pero no fallar - la auditoría no debe bloquear operaciones
+                Console.WriteLine($"Error registrando auditoría: {ex.Message}");
             }
-
         }
 
         public async Task<List<RegistroAuditoria>> ObtenerPorFechasAsync(DateTime fechaInicio, DateTime fechaFin)

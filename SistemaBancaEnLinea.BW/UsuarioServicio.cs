@@ -85,6 +85,7 @@ namespace SistemaBancaEnLinea.BW
         public async Task<List<Usuario>> ObtenerTodosAsync() =>
             await _context.Usuarios
                 .Include(u => u.ClienteAsociado)
+                .OrderByDescending(u => u.FechaCreacion)
                 .ToListAsync();
 
         /// <summary>

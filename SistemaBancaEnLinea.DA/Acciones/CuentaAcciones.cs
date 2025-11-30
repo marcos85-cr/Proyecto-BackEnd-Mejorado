@@ -19,6 +19,19 @@ namespace SistemaBancaEnLinea.DA.Acciones
                 .FirstOrDefaultAsync(c => c.Id == id);
         }
 
+        /// <summary>
+        /// Obtiene una cuenta por ID con relaciones completas (Cliente, Usuario, Gestor)
+        /// </summary>
+        public async Task<Cuenta?> ObtenerPorIdConRelacionesAsync(int id)
+        {
+            return await _context.Cuentas
+                .Include(c => c.Cliente)
+                    .ThenInclude(cl => cl.UsuarioAsociado)
+                .Include(c => c.Cliente)
+                    .ThenInclude(cl => cl.GestorAsignado)
+                .FirstOrDefaultAsync(c => c.Id == id);
+        }
+
         public async Task<Cuenta?> ObtenerPorNumeroAsync(string numero)
         {
             return await _context.Cuentas
@@ -77,6 +90,26 @@ namespace SistemaBancaEnLinea.DA.Acciones
                 query = query.Where(c => c.Estado == estado);
 
             return await query.Include(c => c.Cliente).ToListAsync();
+        }
+
+        /// <summary>
+        /// Obtiene todas las cuentas con relaciones completas (Cliente, Usuario, Gestor)
+        /// </summary>
+        public async Task<List<Cuenta>> ObtenerTodasConRelacionesAsync()
+        {
+            return await _context.Cuentas
+                .Include(c => c.Cliente)
+                    .ThenInclude(cl => cl.UsuarioAsociado)
+                .Include(c => c.Cliente)
+                    .ThenInclude(cl => cl.GestorAsignado)
+                .OrderByDescending(c => c.FechaApertura)
+                .ToListAsync();
+        }
+
+        public async Task<bool> TieneTransaccionesAsync(int cuentaId)
+        {
+            return await _context.Transacciones
+                .AnyAsync(t => t.CuentaOrigenId == cuentaId || t.CuentaDestinoId == cuentaId);
         }
     }
 }

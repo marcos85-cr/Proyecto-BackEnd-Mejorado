@@ -67,6 +67,22 @@ namespace SistemaBancaEnLinea.BW
         }
 
         /// <summary>
+        /// Obtiene una cuenta con relaciones completas (Cliente, Usuario, Gestor)
+        /// </summary>
+        public async Task<Cuenta?> ObtenerCuentaConRelacionesAsync(int id)
+        {
+            try
+            {
+                return await _cuentaAcciones.ObtenerPorIdConRelacionesAsync(id);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo cuenta con relaciones {Id}", id);
+                throw;
+            }
+        }
+
+        /// <summary>
         /// RF-B1: Crea una nueva cuenta para el cliente
         /// </summary>
         public async Task<Cuenta> CrearCuentaAsync(int clienteId, string tipo, string moneda, decimal saldoInicial)
@@ -131,7 +147,7 @@ namespace SistemaBancaEnLinea.BW
         }
 
         /// <summary>
-        /// RF-B3: Bloquea una cuenta
+        /// RF-B3: Toggle bloqueo/desbloqueo de cuenta
         /// </summary>
         public async Task BloquearCuentaAsync(int id)
         {
@@ -141,23 +157,26 @@ namespace SistemaBancaEnLinea.BW
                 if (cuenta == null)
                     throw new InvalidOperationException("La cuenta no existe.");
 
-                if (!CuentasReglas.PuedeBloquearse(cuenta))
-                    throw new InvalidOperationException("La cuenta no puede ser bloqueada.");
+                if (cuenta.Estado == "Cerrada" || cuenta.Estado == "Inactiva")
+                    throw new InvalidOperationException($"No se puede modificar una cuenta {cuenta.Estado.ToLower()}.");
 
-                cuenta.Estado = "Bloqueada";
+                var nuevoEstado = cuenta.Estado == "Bloqueada" ? "Activa" : "Bloqueada";
+                var accion = nuevoEstado == "Bloqueada" ? "bloqueada" : "desbloqueada";
+
+                cuenta.Estado = nuevoEstado;
                 await _cuentaAcciones.ActualizarAsync(cuenta);
 
                 await _auditoriaAcciones.RegistrarAsync(
                     cuenta.ClienteId,
-                    "BloqueoCuenta",
-                    $"Cuenta {cuenta.Numero} bloqueada"
+                    nuevoEstado == "Bloqueada" ? "BloqueoCuenta" : "DesbloqueoCuenta",
+                    $"Cuenta {cuenta.Numero} {accion}"
                 );
 
-                _logger.LogInformation($"Cuenta {id} bloqueada");
+                _logger.LogInformation("Cuenta {Id} {Accion}", id, accion);
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error bloqueando cuenta {id}: {ex.Message}");
+                _logger.LogError(ex, "Error bloqueando/desbloqueando cuenta {Id}", id);
                 throw;
             }
         }
@@ -212,6 +231,54 @@ namespace SistemaBancaEnLinea.BW
                 _logger.LogError($"Error obteniendo saldo de cuenta {cuentaId}: {ex.Message}");
                 throw;
             }
+        }
+
+        /// <summary>
+        /// Obtiene todas las cuentas con sus relaciones completas (Cliente, Usuario, Gestor)
+        /// </summary>
+        public async Task<List<Cuenta>> ObtenerTodasConRelacionesAsync()
+        {
+            try
+            {
+                return await _cuentaAcciones.ObtenerTodasConRelacionesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo todas las cuentas con relaciones");
+                throw;
+            }
+        }
+
+        public async Task<bool> TieneTransaccionesAsync(int cuentaId)
+        {
+            return await _cuentaAcciones.TieneTransaccionesAsync(cuentaId);
+        }
+
+        public async Task EliminarCuentaAsync(int cuentaId)
+        {
+            var cuenta = await _cuentaAcciones.ObtenerPorIdAsync(cuentaId);
+            if (cuenta == null)
+                throw new InvalidOperationException("La cuenta no existe.");
+
+            if (cuenta.Estado == "Inactiva")
+                throw new InvalidOperationException("La cuenta ya está inactiva.");
+
+            if (await _cuentaAcciones.TieneTransaccionesAsync(cuentaId))
+                throw new InvalidOperationException("No se puede eliminar una cuenta con transacciones asociadas.");
+
+            if (cuenta.Saldo > 0)
+                throw new InvalidOperationException("No se puede eliminar una cuenta con saldo positivo.");
+
+            cuenta.Estado = "Inactiva";
+            await _cuentaAcciones.ActualizarAsync(cuenta);
+
+            await _auditoriaAcciones.RegistrarAsync(
+                cuenta.ClienteId,
+                "EliminacionCuenta",
+                $"Cuenta {cuenta.Numero} marcada como inactiva"
+            );
+
+            _logger.LogInformation("Cuenta {Numero} eliminada (inactiva)", cuenta.Numero);
         }
 
         /// <summary>

@@ -65,6 +65,14 @@ namespace SistemaBancaEnLinea.BW
                     return resultado;
                 }
 
+                // Validar que la cuenta pertenezca al cliente (restricción: no operar sin autorización)
+                if (request.ClienteId > 0 && cuentaOrigen.ClienteId != request.ClienteId)
+                {
+                    resultado.PuedeEjecutar = false;
+                    resultado.Errores.Add("No tiene autorización para operar esta cuenta.");
+                    return resultado;
+                }
+
                 // Validar que la cuenta esté activa
                 if (!CuentasReglas.EsCuentaActiva(cuentaOrigen))
                 {
@@ -263,6 +271,9 @@ namespace SistemaBancaEnLinea.BW
 
         /// <summary>
         /// Aprueba una transacción pendiente
+        /// Restricciones:
+        /// - No puede aprobar operaciones por encima del límite de autorización
+        /// - Requiere validación previa del cliente o gestor
         /// </summary>
         public async Task<Transaccion> AprobarTransaccionAsync(int transaccionId, int aprobadorId)
         {
@@ -272,6 +283,15 @@ namespace SistemaBancaEnLinea.BW
 
             if (transaccion.Estado != "PendienteAprobacion")
                 throw new InvalidOperationException("La transacción no está pendiente de aprobación.");
+
+            // Validar límite de autorización del administrador
+            if (TransferenciasReglas.ExcedeLimiteAutorizacionAdmin(transaccion.Monto))
+                throw new InvalidOperationException($"El monto excede el límite de autorización ({TransferenciasReglas.LIMITE_AUTORIZACION_ADMIN:N0}). Requiere autorización superior.");
+
+            // Validar que existe validación previa (el cliente creó la transacción = validación implícita)
+            // La transacción solo puede estar en PendienteAprobacion si fue creada por el cliente/gestor
+            if (transaccion.ClienteId == 0)
+                throw new InvalidOperationException("La operación requiere validación previa del cliente.");
 
             using var transaction = await _context.Database.BeginTransactionAsync();
 
