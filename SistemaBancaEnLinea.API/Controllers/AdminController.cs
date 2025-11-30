@@ -34,9 +34,11 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var resultado = await _usuarioServicio.DesbloquearUsuarioAsync(usuarioId);
-                if (!resultado)
-                    return NotFound(new { success = false, message = "Usuario no encontrado." });
+                var adminId = GetCurrentUserId();
+                var resultado = await _usuarioServicio.ToggleBloqueoUsuarioAsync(usuarioId, adminId);
+                
+                if (!resultado.Exitoso)
+                    return BadRequest(new { success = false, message = resultado.Error });
 
                 return Ok(new { success = true, message = "Usuario desbloqueado exitosamente." });
             }
@@ -46,7 +48,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
         }
-
+        
         /// <summary>
         /// Obtener todos los usuarios
         /// </summary>

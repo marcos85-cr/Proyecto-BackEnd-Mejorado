@@ -8,10 +8,11 @@ using SistemaBancaEnLinea.DA.Acciones;
 using SistemaBancaEnLinea.BW;
 using SistemaBancaEnLinea.BW.CU;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.API.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// ========== CONFIGURACIÓN DE SERVICIOS ==========
+// ========== CONFIGURACIï¿½N DE SERVICIOS ==========
 
 // 1. Configurar DbContext
 builder.Services.AddDbContext<BancaContext>(options =>
@@ -104,9 +105,9 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "Sistema Banca en Línea API",
+        Title = "Sistema Banca en Lï¿½nea API",
         Version = "v1",
-        Description = "API REST para el sistema de banca en línea - Proyecto SOF-18"
+        Description = "API REST para el sistema de banca en lï¿½nea - Proyecto SOF-18"
     });
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
@@ -136,51 +137,32 @@ builder.Services.AddSwaggerGen(c =>
 
 var app = builder.Build();
 
-// ========== CONFIGURACIÓN DEL PIPELINE ==========
+// ========== CONFIGURACIï¿½N DEL PIPELINE ==========
 
 // SIEMPRE habilitar Swagger (Development y Production)
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Sistema Banca API v1");
-    c.RoutePrefix = "swagger"; // Swagger en la raíz
+    c.RoutePrefix = "swagger"; // Swagger en la raï¿½z
 });
 
-// Aplicar migraciones y seed data automáticamente
-using (var scope = app.Services.CreateScope())
-{
-    var services = scope.ServiceProvider;
-    try
-    {
-        var context = services.GetRequiredService<BancaContext>();
-
-        Console.WriteLine("========================================");
-        Console.WriteLine("Aplicando migraciones pendientes...");
-        await context.Database.MigrateAsync();
-        Console.WriteLine(" Migraciones aplicadas exitosamente.");
-
-        Console.WriteLine("Iniciando seed de datos...");
-        await SeedData.InitializeAsync(context);
-        await SeedDataProveedores.InitializeProveedoresAsync(context);
-        Console.WriteLine(" Seed de datos completado.");
-        Console.WriteLine("========================================");
-    }
-    catch (Exception ex)
-    {
-        var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, " Error durante la migración o seed de datos");
-        throw;
-    }
-}
 
 app.UseHttpsRedirection();
 app.UseCors("AllowAll");
+
+// Middleware personalizado para validaciÃ³n de JWT
+app.UseMiddleware<JwtMiddleware>();
+
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Middleware para respuestas consistentes de autorizaciÃ³n
+app.UseMiddleware<AuthorizationResponseMiddleware>();
 app.MapControllers();
 
 Console.WriteLine("========================================");
-Console.WriteLine(" API Sistema Banca en Línea INICIADA");
+Console.WriteLine(" API Sistema Banca en Lï¿½nea INICIADA");
 Console.WriteLine($" Swagger UI: https://localhost:7500");
 Console.WriteLine($" Swagger UI: http://localhost:5500");
 Console.WriteLine("========================================");

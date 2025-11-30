@@ -1,13 +1,13 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
-using SistemaBancaEnLinea.BC.Modelos;
+using SistemaBancaEnLinea.BC.Modelos.DTOs;
+using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
     [ApiController]
     [Route("api/[controller]")]
-    [Authorize]
     public class UsersController : ControllerBase
     {
         private readonly IUsuarioServicio _usuarioServicio;
@@ -24,10 +24,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// GET: api/users
-        /// Obtiene todos los usuarios (Admin/Gestor)
-        /// </summary>
         [HttpGet]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> GetAllUsers()
@@ -35,36 +31,16 @@ namespace SistemaBancaEnLinea.API.Controllers
             try
             {
                 var usuarios = await _usuarioServicio.ObtenerTodosAsync();
-
-                return Ok(new
-                {
-                    success = true,
-                    data = usuarios.Select(u => new
-                    {
-                        id = u.Id.ToString(),
-                        email = u.Email,
-                        role = u.Rol,
-                        nombre = u.Nombre ?? u.Email,
-                        identificacion = u.Identificacion,
-                        telefono = u.Telefono,
-                        bloqueado = u.EstaBloqueado,
-                        intentosFallidos = u.IntentosFallidos,
-                        fechaCreacion = u.FechaCreacion,
-                        cuentasActivas = 0 // TODO: Calcular desde cliente asociado
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<UsuarioListaDto>>.Ok(
+                    UsuarioReglas.MapearAListaDto(usuarios)));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo usuarios: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo usuarios");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// GET: api/users/{id}
-        /// Obtiene un usuario por ID
-        /// </summary>
         [HttpGet("{id}")]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> GetUser(int id)
@@ -73,161 +49,71 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var usuario = await _usuarioServicio.ObtenerPorIdAsync(id);
                 if (usuario == null)
-                    return NotFound(new { success = false, message = "Usuario no encontrado." });
+                    return NotFound(ApiResponse.Fail("Usuario no encontrado."));
 
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        id = usuario.Id.ToString(),
-                        email = usuario.Email,
-                        role = usuario.Rol,
-                        nombre = usuario.Nombre ?? usuario.Email,
-                        identificacion = usuario.Identificacion,
-                        telefono = usuario.Telefono,
-                        bloqueado = usuario.EstaBloqueado,
-                        intentosFallidos = usuario.IntentosFallidos,
-                        fechaCreacion = usuario.FechaCreacion,
-                        fechaBloqueo = usuario.FechaBloqueo
-                    }
-                });
+                return Ok(ApiResponse<UsuarioDetalleDto>.Ok(
+                    UsuarioReglas.MapearADetalleDto(usuario)));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo usuario {id}: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo usuario {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// POST: api/users
-        /// Crea un nuevo usuario (Solo Admin)
-        /// </summary>
         [HttpPost]
         [Authorize(Roles = "Administrador")]
-        public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
+        public async Task<IActionResult> CreateUser([FromBody] UsuarioRequest request)
         {
             try
             {
-                if (!ModelState.IsValid)
-                    return BadRequest(new { success = false, message = "Datos inválidos" });
+                var resultado = await _usuarioServicio.CrearUsuarioAsync(request);
 
-                var usuario = await _usuarioServicio.RegistrarUsuarioAsync(
-                    request.Email,
-                    request.Password,
-                    request.Role
-                );
+                if (!resultado.Exitoso)
+                    return BadRequest(ApiResponse.Fail(resultado.Error!));
 
-                // Actualizar información adicional
-                usuario.Nombre = request.Nombre;
-                usuario.Identificacion = request.Identificacion;
-                usuario.Telefono = request.Telefono;
-                await _usuarioServicio.ActualizarUsuarioAsync(usuario);
-
-                var adminId = GetCurrentUserId();
                 await _auditoriaServicio.RegistrarAsync(
-                    adminId,
-                    "CreacionUsuario",
-                    $"Usuario {request.Email} creado por administrador"
-                );
+                    GetCurrentUserId(), "CreacionUsuario", $"Usuario {request.Email} creado");
 
-                return CreatedAtAction(nameof(GetUser), new { id = usuario.Id }, new
-                {
-                    success = true,
-                    message = "Usuario creado exitosamente",
-                    data = new
-                    {
-                        id = usuario.Id.ToString(),
-                        email = usuario.Email,
-                        role = usuario.Rol,
-                        nombre = usuario.Nombre
-                    }
-                });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return BadRequest(new { success = false, message = ex.Message });
+                return CreatedAtAction(nameof(GetUser), new { id = resultado.Datos!.Id },
+                    ApiResponse<UsuarioCreacionDto>.Ok(
+                        UsuarioReglas.MapearACreacionDto(resultado.Datos),
+                        "Usuario creado exitosamente"));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error creando usuario: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error creando usuario");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
-
-        /// <summary>
-        /// PUT: api/users/{id}
-        /// Actualiza un usuario
-        /// </summary>
+        
         [HttpPut("{id}")]
         [Authorize(Roles = "Administrador")]
-        public async Task<IActionResult> UpdateUser(int id, [FromBody] UpdateUserRequest request)
+        public async Task<IActionResult> UpdateUser(int id, [FromBody] UsuarioRequest request)
         {
             try
             {
-                var usuario = await _usuarioServicio.ObtenerPorIdAsync(id);
-                if (usuario == null)
-                    return NotFound(new { success = false, message = "Usuario no encontrado." });
+                var resultado = await _usuarioServicio.ActualizarUsuarioAsync(id, request);
 
-                // Actualizar campos permitidos
-                if (!string.IsNullOrWhiteSpace(request.Nombre))
-                    usuario.Nombre = request.Nombre;
+                if (!resultado.Exitoso)
+                    return BadRequest(ApiResponse.Fail(resultado.Error!));
 
-                if (!string.IsNullOrWhiteSpace(request.Telefono))
-                    usuario.Telefono = request.Telefono;
-
-                if (!string.IsNullOrWhiteSpace(request.Identificacion))
-                    usuario.Identificacion = request.Identificacion;
-
-                if (!string.IsNullOrWhiteSpace(request.Email) && request.Email != usuario.Email)
-                {
-                    if (await _usuarioServicio.ExisteEmailAsync(request.Email))
-                        return BadRequest(new { success = false, message = "El email ya está registrado." });
-
-                    usuario.Email = request.Email;
-                }
-
-                // Actualizar rol si se especifica
-                if (!string.IsNullOrWhiteSpace(request.Role) && request.Role != usuario.Rol)
-                {
-                    usuario.Rol = request.Role;
-                }
-
-                var usuarioActualizado = await _usuarioServicio.ActualizarUsuarioAsync(usuario);
-
-                var adminId = GetCurrentUserId();
                 await _auditoriaServicio.RegistrarAsync(
-                    adminId,
-                    "ActualizacionUsuario",
-                    $"Usuario {usuario.Email} actualizado"
-                );
+                    GetCurrentUserId(), "ActualizacionUsuario", $"Usuario {resultado.Datos!.Email} actualizado");
 
-                return Ok(new
-                {
-                    success = true,
-                    message = "Usuario actualizado exitosamente",
-                    data = new
-                    {
-                        id = usuarioActualizado.Id.ToString(),
-                        email = usuarioActualizado.Email,
-                        role = usuarioActualizado.Rol,
-                        nombre = usuarioActualizado.Nombre,
-                        identificacion = usuarioActualizado.Identificacion,
-                        telefono = usuarioActualizado.Telefono
-                    }
-                });
+                return Ok(ApiResponse<UsuarioActualizacionDto>.Ok(
+                    UsuarioReglas.MapearAActualizacionDto(resultado.Datos),
+                    "Usuario actualizado exitosamente"));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error actualizando usuario {id}: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error actualizando usuario {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
         /// <summary>
-        /// PUT: api/users/{id}/block
-        /// Bloquea o desbloquea un usuario
+        /// PUT: api/users/{id}/block - Bloquea/desbloquea usuario
         /// </summary>
         [HttpPut("{id}/block")]
         [Authorize(Roles = "Administrador")]
@@ -235,54 +121,31 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var usuario = await _usuarioServicio.ObtenerPorIdAsync(id);
-                if (usuario == null)
-                    return NotFound(new { success = false, message = "Usuario no encontrado." });
+                var resultado = await _usuarioServicio.ToggleBloqueoUsuarioAsync(id, GetCurrentUserId());
 
-                bool nuevoEstado = !usuario.EstaBloqueado;
+                if (!resultado.Exitoso)
+                    return BadRequest(ApiResponse.Fail(resultado.Error!));
 
-                if (nuevoEstado)
-                {
-                    // Bloquear
-                    usuario.EstaBloqueado = true;
-                    usuario.FechaBloqueo = DateTime.UtcNow;
-                }
-                else
-                {
-                    // Desbloquear
-                    await _usuarioServicio.DesbloquearUsuarioAsync(id);
-                    usuario = await _usuarioServicio.ObtenerPorIdAsync(id);
-                }
+                var accion = resultado.Datos!.EstaBloqueado ? "bloqueado" : "desbloqueado";
 
-                var adminId = GetCurrentUserId();
                 await _auditoriaServicio.RegistrarAsync(
-                    adminId,
-                    nuevoEstado ? "BloqueoUsuario" : "DesbloqueoUsuario",
-                    $"Usuario {usuario!.Email} {(nuevoEstado ? "bloqueado" : "desbloqueado")}"
-                );
+                    GetCurrentUserId(),
+                    resultado.Datos.EstaBloqueado ? "BloqueoUsuario" : "DesbloqueoUsuario",
+                    $"Usuario {resultado.Datos.Email} {accion}");
 
-                return Ok(new
-                {
-                    success = true,
-                    message = $"Usuario {(nuevoEstado ? "bloqueado" : "desbloqueado")} exitosamente",
-                    data = new
-                    {
-                        id = usuario.Id.ToString(),
-                        bloqueado = usuario.EstaBloqueado,
-                        fechaBloqueo = usuario.FechaBloqueo
-                    }
-                });
+                return Ok(ApiResponse<UsuarioBloqueoDto>.Ok(
+                    UsuarioReglas.MapearABloqueoDto(resultado.Datos),
+                    $"Usuario {accion} exitosamente"));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error bloqueando/desbloqueando usuario {id}: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error bloqueando/desbloqueando usuario {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
         /// <summary>
-        /// GET: api/users/check-email/{email}
-        /// Verifica disponibilidad de email
+        /// GET: api/users/check-email/{email} - Verifica disponibilidad de email
         /// </summary>
         [HttpGet("check-email/{email}")]
         [AllowAnonymous]
@@ -291,47 +154,89 @@ namespace SistemaBancaEnLinea.API.Controllers
             try
             {
                 var existe = await _usuarioServicio.ExisteEmailAsync(email);
-                return Ok(new
-                {
-                    success = true,
-                    available = !existe
-                });
+                return Ok(ApiResponse<EmailDisponibilidadDto>.Ok(
+                    UsuarioReglas.CrearEmailDisponibilidadDto(existe)));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error verificando email: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error verificando email");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
+        /// <summary>
+        /// PUT: api/users/{id}/change-password - Cambia contraseña
+        /// </summary>
+        [HttpPut("{id}/change-password")]
+        //[Authorize]
+        public async Task<IActionResult> ChangePassword(int id, [FromBody] CambioContrasenaRequest request)
+        {
+            try
+            {
+                var resultado = await _usuarioServicio.CambiarContrasenaAsync(
+                    id,
+                    GetCurrentUserId(),
+                    GetCurrentUserRole(),
+                    request.ContrasenaActual,
+                    request.NuevaContrasena);
+
+                if (!resultado.Exitoso)
+                    return BadRequest(ApiResponse.Fail(resultado.Error!));
+
+                var usuario = await _usuarioServicio.ObtenerPorIdAsync(id);
+
+                await _auditoriaServicio.RegistrarAsync(
+                    GetCurrentUserId(), "CambioContrasena", $"Contraseña cambiada para usuario {usuario?.Email}");
+
+                return Ok(ApiResponse<CambioContrasenaDto>.Ok(
+                    UsuarioReglas.MapearACambioContrasenaDto(usuario!),
+                    "Contraseña actualizada exitosamente"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cambiando contraseña para usuario {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+            }
+        }
+
+        /// <summary>
+        /// DELETE: api/users/{id} - Elimina un usuario
+        /// </summary>
+        [HttpDelete("{id}")]
+        [Authorize(Roles = "Administrador")]
+        public async Task<IActionResult> DeleteUser(int id)
+        {
+            try
+            {
+                var resultado = await _usuarioServicio.EliminarUsuarioAsync(id, GetCurrentUserId());
+
+                if (!resultado.Exitoso)
+                    return BadRequest(ApiResponse.Fail(resultado.Error!));
+
+                await _auditoriaServicio.RegistrarAsync(
+                    GetCurrentUserId(), "EliminacionUsuario", $"Usuario {id} eliminado");
+
+                return Ok(ApiResponse.Ok("Usuario eliminado exitosamente"));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error eliminando usuario {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+            }
+        }
+
+        #region Métodos Privados - Extracción de Claims
+
         private int GetCurrentUserId()
         {
-            var userIdClaim = User.FindFirst("sub")?.Value
-                ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            return int.TryParse(userIdClaim, out var userId) ? userId : 0;
+            var claim = User.FindFirst("sub")?.Value ??
+                        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(claim, out var userId) ? userId : 0;
         }
-    }
 
-    // DTOs
-    public class CreateUserRequest
-    {
-        public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-        public string ConfirmPassword { get; set; } = string.Empty;
-        public string Nombre { get; set; } = string.Empty;
-        public string Identificacion { get; set; } = string.Empty;
-        public string Telefono { get; set; } = string.Empty;
-        public string Role { get; set; } = "Cliente";
-    }
+        private string GetCurrentUserRole() =>
+            User.FindFirst("role")?.Value ?? "";
 
-    public class UpdateUserRequest
-    {
-        public string? Email { get; set; }
-        public string? Nombre { get; set; }
-        public string? Identificacion { get; set; }
-        public string? Telefono { get; set; }
-        public string? Role { get; set; }
-        public string? Password { get; set; }
-        public string? ConfirmPassword { get; set; }
+        #endregion
     }
 }

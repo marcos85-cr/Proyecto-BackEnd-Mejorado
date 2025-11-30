@@ -1,47 +1,153 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using SistemaBancaEnLinea.BC.Modelos;
+using SistemaBancaEnLinea.BC.Modelos.DTOs;
+using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.DA;
 using System.Security.Cryptography;
 using System.Text;
-using SistemaBancaEnLinea.BC.ReglasDeNegocio;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using Microsoft.Extensions.Configuration;
 
 namespace SistemaBancaEnLinea.BW
 {
+    /// <summary>
+    /// Servicio de gestión de usuarios
+    /// Implementa operaciones CRUD con validaciones integradas
+    /// El controlador solo debe llamar a estos métodos sin lógica adicional
+    /// </summary>
     public class UsuarioServicio : IUsuarioServicio
     {
         private readonly BancaContext _context;
-        private const string JWT_SECRET = "TuClaveSecretaMuyLargaYSegura1234567890!@#$%";
-        private const int TOKEN_EXPIRATION_SECONDS = 20 * 60; // 20 minutos
+        private readonly IConfiguration _configuration;
 
-        public UsuarioServicio(BancaContext context)
+        // Configuración JWT
+        private const int TOKEN_EXPIRATION_SECONDS = 60000;
+
+        public UsuarioServicio(BancaContext context, IConfiguration configuration)
         {
             _context = context;
+            _configuration = configuration;
         }
 
+        #region Autenticación
+
         /// <summary>
-        /// RF-A1: Registro de usuarios con validación completa
+        /// RF-A2: Autenticación con control de intentos fallidos
+        /// Genera JWT con expiración de 20 minutos
         /// </summary>
-        public async Task<Usuario> RegistrarUsuarioAsync(string email, string password, string rol)
+        public async Task<ResultadoLogin> IniciarSesionAsync(string email, string password)
         {
-            // Validar email único
-            if (await _context.Usuarios.AnyAsync(u => u.Email == email))
-                throw new InvalidOperationException("El correo electrónico ya está registrado.");
+            var usuario = await ObtenerPorEmailAsync(email);
 
-            // Validar formato de contraseña
-            if (!AutenticacionReglas.ValidarFormatoPassword(password))
-                throw new InvalidOperationException(
-                    "La contraseña debe tener mínimo 8 caracteres, incluir al menos 1 mayúscula, 1 número y 1 símbolo.");
+            if (usuario == null)
+                return ResultadoLogin.Fallido("Credenciales inválidas.");
 
-            // Validar rol
-            if (!AutenticacionReglas.ValidarRol(rol))
-                throw new InvalidOperationException("Rol no válido. Use: Administrador, Gestor o Cliente.");
+            // Verificar bloqueo usando reglas de AutenticacionReglas
+            if (AutenticacionReglas.EstaUsuarioBloqueado(usuario))
+            {
+                var minutosRestantes = AutenticacionReglas.MinutosRestantesBloqueo(usuario);
+                return ResultadoLogin.Fallido($"Cuenta bloqueada. Intente en {minutosRestantes} minutos.");
+            }
 
+            // Desbloqueo automático si pasaron los 15 minutos
+            if (usuario.EstaBloqueado && !AutenticacionReglas.EstaUsuarioBloqueado(usuario))
+            {
+                UsuarioReglas.AplicarDesbloqueo(usuario);
+            }
+
+            // Verificar contraseña
+            if (!VerificarPassword(password, usuario.PasswordHash))
+            {
+                return await ProcesarIntentoFallido(usuario);
+            }
+
+            // Login exitoso
+            usuario.IntentosFallidos = 0;
+            await _context.SaveChangesAsync();
+
+            // Obtener clienteId si aplica
+            int? clienteId = await ObtenerClienteIdAsync(usuario);
+
+            // Sincronizar datos del cliente si existe
+            SincronizarDatosCliente(usuario);
+
+            var token = GenerarToken(usuario, clienteId);
+            return ResultadoLogin.Exito(token, usuario);
+        }
+
+        #endregion
+
+        #region Consultas
+
+        /// <summary>
+        /// Obtiene todos los usuarios con clientes asociados
+        /// </summary>
+        public async Task<List<Usuario>> ObtenerTodosAsync() =>
+            await _context.Usuarios
+                .Include(u => u.ClienteAsociado)
+                .ToListAsync();
+
+        /// <summary>
+        /// Obtiene un usuario por ID con cliente asociado
+        /// </summary>
+        public async Task<Usuario?> ObtenerPorIdAsync(int id) =>
+            await _context.Usuarios
+                .Include(u => u.ClienteAsociado)
+                .FirstOrDefaultAsync(u => u.Id == id);
+
+        /// <summary>
+        /// Obtiene usuarios por rol específico
+        /// </summary>
+        public async Task<List<Usuario>> ObtenerPorRolAsync(string rol) =>
+            await _context.Usuarios
+                .Where(u => u.Rol == rol)
+                .Include(u => u.ClienteAsociado)
+                .ToListAsync();
+
+        /// <summary>
+        /// Verifica si un email ya está registrado
+        /// </summary>
+        public async Task<bool> ExisteEmailAsync(string email) =>
+            await _context.Usuarios.AnyAsync(u => u.Email == email);
+
+        #endregion
+
+        #region Operaciones CRUD con Validaciones Integradas
+
+        /// <summary>
+        /// Crea un nuevo usuario con todas las validaciones
+        /// Incluye: validación de datos, email único, hash de contraseña
+        /// </summary>
+        public async Task<ResultadoOperacion<Usuario>> CrearUsuarioAsync(UsuarioRequest request)
+        {
+            // Validar datos usando reglas de negocio BC
+            var validacion = UsuarioReglas.ValidarCreacionUsuario(
+                request.Email,
+                request.Password ?? "",
+                request.Role,
+                request.Nombre,
+                request.Identificacion,
+                request.Telefono);
+
+            if (!validacion.EsValido)
+                return ResultadoOperacion<Usuario>.Fallo(validacion.Mensaje);
+
+            // Validar email único en BD
+            if (await ExisteEmailAsync(request.Email))
+                return ResultadoOperacion<Usuario>.Fallo("El correo electrónico ya está registrado.");
+
+            // Crear usuario
             var usuario = new Usuario
             {
-                Email = email,
-                PasswordHash = HashPassword(password),
-                Rol = rol,
+                Email = request.Email,
+                PasswordHash = HashPassword(request.Password!),
+                Rol = request.Role,
+                Nombre = request.Nombre,
+                Identificacion = request.Identificacion,
+                Telefono = request.Telefono,
                 IntentosFallidos = 0,
                 EstaBloqueado = false,
                 FechaCreacion = DateTime.UtcNow
@@ -50,261 +156,285 @@ namespace SistemaBancaEnLinea.BW
             _context.Usuarios.Add(usuario);
             await _context.SaveChangesAsync();
 
-            return usuario;
+            return ResultadoOperacion<Usuario>.Exito(usuario);
         }
 
         /// <summary>
-        /// RF-A2: Autenticación con generación de JWT (20 minutos)
+        /// Actualiza un usuario con todas las validaciones
+        /// Incluye: validación de existencia, email único, campos válidos
         /// </summary>
-        public async Task<ResultadoLogin> IniciarSesionAsync(string email, string password)
+        public async Task<ResultadoOperacion<Usuario>> ActualizarUsuarioAsync(int id, UsuarioRequest request)
         {
-            var usuario = await _context.Usuarios
-                .Include(u => u.ClienteAsociado)
-                .FirstOrDefaultAsync(u => u.Email == email);
-
+            // Buscar usuario existente
+            var usuario = await ObtenerPorIdAsync(id);
             if (usuario == null)
-                return new ResultadoLogin
-                {
-                    Exitoso = false,
-                    Error = "Credenciales inválidas.",
-                    Usuario = null
-                };
+                return ResultadoOperacion<Usuario>.Fallo("Usuario no encontrado.");
 
-            // Verificar si está bloqueado
-            if (usuario.EstaBloqueado)
-            {
-                if (usuario.FechaBloqueo.HasValue &&
-                    DateTime.UtcNow < usuario.FechaBloqueo.Value.AddMinutes(AutenticacionReglas.MINUTOS_BLOQUEO))
-                {
-                    var minutosRestantes = AutenticacionReglas.MinutosRestantesBloqueo(usuario);
-                    return new ResultadoLogin
-                    {
-                        Exitoso = false,
-                        Error = $"Cuenta bloqueada. Intente en {minutosRestantes} minutos.",
-                        Usuario = null
-                    };
-                }
-                else
-                {
-                    // Desbloquear automáticamente después de 15 minutos
-                    usuario.EstaBloqueado = false;
-                    usuario.IntentosFallidos = 0;
-                    usuario.FechaBloqueo = null;
-                }
-            }
+            // Verificar email único si se está cambiando
+            bool nuevoEmailExiste = !string.IsNullOrWhiteSpace(request.Email)
+                && request.Email != usuario.Email
+                && await ExisteEmailAsync(request.Email);
 
-            // Verificar contraseña
-            if (!VerificarPassword(password, usuario.PasswordHash))
-            {
-                usuario.IntentosFallidos++;
+            // Validar usando reglas de negocio BC
+            var validacion = UsuarioReglas.ValidarActualizacionUsuario(
+                request.Nombre,
+                request.Telefono,
+                request.Identificacion,
+                request.Email,
+                usuario.Email,
+                nuevoEmailExiste,
+                request.Role);
 
-                // RF-A2: Bloquear después de 5 intentos fallidos
-                if (usuario.IntentosFallidos >= AutenticacionReglas.INTENTOS_MAXIMOS_FALLIDOS)
-                {
-                    usuario.EstaBloqueado = true;
-                    usuario.FechaBloqueo = DateTime.UtcNow;
-                    await _context.SaveChangesAsync();
+            if (!validacion.EsValido)
+                return ResultadoOperacion<Usuario>.Fallo(validacion.Mensaje);
 
-                    return new ResultadoLogin
-                    {
-                        Exitoso = false,
-                        Error = "Cuenta bloqueada por 15 minutos debido a múltiples intentos fallidos.",
-                        Usuario = null
-                    };
-                }
+            // Aplicar actualizaciones usando reglas BC
+            UsuarioReglas.AplicarActualizaciones(
+                usuario,
+                request.Nombre,
+                request.Telefono,
+                request.Identificacion,
+                request.Email,
+                request.Role);
 
-                await _context.SaveChangesAsync();
-
-                return new ResultadoLogin
-                {
-                    Exitoso = false,
-                    Error = $"Credenciales inválidas. Intentos restantes: {AutenticacionReglas.INTENTOS_MAXIMOS_FALLIDOS - usuario.IntentosFallidos}",
-                    Usuario = null
-                };
-            }
-
-            // Login exitoso - resetear intentos
-            usuario.IntentosFallidos = 0;
             await _context.SaveChangesAsync();
-
-            // Obtener el clienteId si existe
-            int? clienteId = null;
-            if (usuario.Rol == "Cliente")
-            {
-                var cliente = await _context.Clientes
-                    .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuario.Id);
-                clienteId = cliente?.Id;
-            }
-
-            // Generar token JWT con clienteId
-            var token = GenerarToken(usuario, clienteId);
-
-            // Actualizar información del usuario con datos del cliente si existe
-            if (usuario.ClienteAsociado != null)
-            {
-                usuario.Nombre = usuario.ClienteAsociado.NombreCompleto;
-                usuario.Identificacion = usuario.ClienteAsociado.Identificacion;
-                usuario.Telefono = usuario.ClienteAsociado.Telefono;
-            }
-
-            return new ResultadoLogin
-            {
-                Exitoso = true,
-                Token = token,
-                Usuario = usuario
-            };
+            return ResultadoOperacion<Usuario>.Exito(usuario);
         }
 
         /// <summary>
-        /// Desbloquea un usuario
+        /// Bloquea o desbloquea un usuario con validaciones de permisos
+        /// Incluye: validación de existencia, permisos de admin, estado actual
         /// </summary>
-        public async Task<bool> DesbloquearUsuarioAsync(int usuarioId)
+        public async Task<ResultadoOperacion<Usuario>> ToggleBloqueoUsuarioAsync(int usuarioId, int adminId)
         {
+            var usuario = await ObtenerPorIdAsync(usuarioId);
+            if (usuario == null)
+                return ResultadoOperacion<Usuario>.Fallo("Usuario no encontrado.");
+
+            bool nuevoEstado = !usuario.EstaBloqueado;
+
+            if (nuevoEstado)
+            {
+                // Validar si puede bloquear
+                var validacion = UsuarioReglas.PuedeBloquearUsuario(usuario, adminId);
+                if (!validacion.EsValido)
+                    return ResultadoOperacion<Usuario>.Fallo(validacion.Mensaje);
+
+                UsuarioReglas.AplicarBloqueo(usuario);
+            }
+            else
+            {
+                // Validar si puede desbloquear
+                var validacion = UsuarioReglas.PuedeDesbloquearUsuario(usuario);
+                if (!validacion.EsValido)
+                    return ResultadoOperacion<Usuario>.Fallo(validacion.Mensaje);
+
+                UsuarioReglas.AplicarDesbloqueo(usuario);
+            }
+
+            await _context.SaveChangesAsync();
+            return ResultadoOperacion<Usuario>.Exito(usuario);
+        }
+
+        /// <summary>
+        /// Cambia la contraseña con todas las validaciones
+        /// Incluye: validación de permisos, contraseña actual, formato nueva contraseña
+        /// </summary>
+        public async Task<ResultadoOperacion<bool>> CambiarContrasenaAsync(
+            int usuarioId,
+            int solicitanteId,
+            string rolSolicitante,
+            string contrasenaActual,
+            string nuevaContrasena)
+        {
+            // Validar permisos: solo el mismo usuario o un admin puede cambiar
+            if (solicitanteId != usuarioId && rolSolicitante != "Administrador")
+                return ResultadoOperacion<bool>.Fallo("No tiene permisos para cambiar esta contraseña.");
+
+            // Obtener usuario
             var usuario = await _context.Usuarios.FindAsync(usuarioId);
-            if (usuario == null) return false;
+            if (usuario == null)
+                return ResultadoOperacion<bool>.Fallo("Usuario no encontrado.");
 
-            usuario.EstaBloqueado = false;
-            usuario.IntentosFallidos = 0;
-            usuario.FechaBloqueo = null;
+            // Verificar contraseña actual
+            if (!VerificarPassword(contrasenaActual, usuario.PasswordHash))
+                return ResultadoOperacion<bool>.Fallo("La contraseña actual es incorrecta.");
+
+            // Validar formato de nueva contraseña
+            var validacion = UsuarioReglas.ValidarContrasena(nuevaContrasena);
+            if (!validacion.EsValido)
+                return ResultadoOperacion<bool>.Fallo(validacion.Mensaje);
+
+            // Aplicar cambio
+            usuario.PasswordHash = HashPassword(nuevaContrasena);
             await _context.SaveChangesAsync();
 
-            return true;
+            return ResultadoOperacion<bool>.Exito(true);
         }
 
         /// <summary>
-        /// Verifica si un email ya existe
+        /// Elimina un usuario validando referencias en otras tablas
         /// </summary>
-        public async Task<bool> ExisteEmailAsync(string email)
+        public async Task<ResultadoOperacion<bool>> EliminarUsuarioAsync(int usuarioId, int adminId)
         {
-            return await _context.Usuarios.AnyAsync(u => u.Email == email);
+            // Validar que no se elimine a sí mismo
+            if (usuarioId == adminId)
+                return ResultadoOperacion<bool>.Fallo("No puede eliminarse a sí mismo.");
+
+            // Obtener usuario
+            var usuario = await _context.Usuarios.FindAsync(usuarioId);
+            if (usuario == null)
+                return ResultadoOperacion<bool>.Fallo("Usuario no encontrado.");
+
+            // Validar que no sea administrador
+            if (usuario.Rol == "Administrador")
+                return ResultadoOperacion<bool>.Fallo("No se puede eliminar a un administrador.");
+
+            // Verificar referencias en otras tablas
+            var referencias = await ValidarReferenciasUsuarioAsync(usuarioId);
+            if (!string.IsNullOrEmpty(referencias))
+                return ResultadoOperacion<bool>.Fallo($"No se puede eliminar el usuario. {referencias}");
+
+            // Eliminar usuario
+            _context.Usuarios.Remove(usuario);
+            await _context.SaveChangesAsync();
+
+            return ResultadoOperacion<bool>.Exito(true);
         }
 
         /// <summary>
-        /// Obtiene un usuario por su ID
+        /// Valida si el usuario tiene referencias en otras tablas
         /// </summary>
-        public async Task<Usuario?> ObtenerPorIdAsync(int id)
+        private async Task<string> ValidarReferenciasUsuarioAsync(int usuarioId)
         {
-            return await _context.Usuarios
-                .Include(u => u.ClienteAsociado)
-                .FirstOrDefaultAsync(u => u.Id == id);
+            var referencias = new List<string>();
+
+            // Verificar si tiene cliente asociado
+            var tieneCliente = await _context.Clientes
+                .AnyAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuarioId);
+            if (tieneCliente)
+                referencias.Add("Cliente asociado");
+
+            // Verificar si es gestor de clientes
+            var esGestor = await _context.Clientes
+                .AnyAsync(c => c.GestorAsignadoId == usuarioId);
+            if (esGestor)
+                referencias.Add("Clientes asignados como gestor");
+
+            // Verificar registros de auditoría
+            var tieneAuditoria = await _context.RegistrosAuditoria
+                .AnyAsync(r => r.UsuarioId == usuarioId);
+            if (tieneAuditoria)
+                referencias.Add("Registros de auditoría");
+
+            if (referencias.Count == 0)
+                return string.Empty;
+
+            return $"Tiene vinculaciones con: {string.Join(", ", referencias)}."; 
         }
 
+        #endregion
+
+        #region Métodos Privados - Autenticación
+
         /// <summary>
-        /// Obtiene un usuario por su Email
+        /// Obtiene un usuario por email (uso interno)
         /// </summary>
-        public async Task<Usuario?> ObtenerPorEmailAsync(string email)
-        {
-            return await _context.Usuarios
+        private async Task<Usuario?> ObtenerPorEmailAsync(string email) =>
+            await _context.Usuarios
                 .Include(u => u.ClienteAsociado)
                 .FirstOrDefaultAsync(u => u.Email == email);
-        }
 
         /// <summary>
-        /// Obtiene todos los usuarios
+        /// Procesa un intento de login fallido
         /// </summary>
-        public async Task<List<Usuario>> ObtenerTodosAsync()
+        private async Task<ResultadoLogin> ProcesarIntentoFallido(Usuario usuario)
         {
-            return await _context.Usuarios
-                .Include(u => u.ClienteAsociado)
-                .ToListAsync();
-        }
+            usuario.IntentosFallidos++;
 
-        /// <summary>
-        /// Obtiene usuarios por rol
-        /// </summary>
-        public async Task<List<Usuario>> ObtenerPorRolAsync(string rol)
-        {
-            return await _context.Usuarios
-                .Where(u => u.Rol == rol)
-                .Include(u => u.ClienteAsociado)
-                .ToListAsync();
-        }
-
-        /// <summary>
-        /// Actualiza un usuario
-        /// </summary>
-        public async Task<Usuario> ActualizarUsuarioAsync(Usuario usuario)
-        {
-            var existente = await _context.Usuarios.FindAsync(usuario.Id);
-            if (existente == null)
-                throw new InvalidOperationException("Usuario no encontrado.");
-
-            existente.Nombre = usuario.Nombre;
-            existente.Telefono = usuario.Telefono;
-            existente.Identificacion = usuario.Identificacion;
+            if (usuario.IntentosFallidos >= AutenticacionReglas.INTENTOS_MAXIMOS_FALLIDOS)
+            {
+                UsuarioReglas.AplicarBloqueo(usuario);
+                await _context.SaveChangesAsync();
+                return ResultadoLogin.Fallido("Cuenta bloqueada por 15 minutos debido a múltiples intentos fallidos.");
+            }
 
             await _context.SaveChangesAsync();
-            return existente;
+            var intentosRestantes = AutenticacionReglas.INTENTOS_MAXIMOS_FALLIDOS - usuario.IntentosFallidos;
+            return ResultadoLogin.Fallido($"Credenciales inválidas. Intentos restantes: {intentosRestantes}");
         }
 
-        // ========== MÉTODOS PRIVADOS ==========
+        /// <summary>
+        /// Obtiene el ID del cliente asociado si el usuario es Cliente
+        /// </summary>
+        private async Task<int?> ObtenerClienteIdAsync(Usuario usuario)
+        {
+            if (usuario.Rol != "Cliente") return null;
+
+            var cliente = await _context.Clientes
+                .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuario.Id);
+            return cliente?.Id;
+        }
 
         /// <summary>
-        /// Genera un JWT token con expiración de 20 minutos
+        /// Sincroniza los datos del cliente en el usuario
+        /// </summary>
+        private static void SincronizarDatosCliente(Usuario usuario)
+        {
+            if (usuario.ClienteAsociado == null) return;
+
+            usuario.Nombre = usuario.ClienteAsociado.NombreCompleto;
+            usuario.Identificacion = usuario.ClienteAsociado.Identificacion;
+            usuario.Telefono = usuario.ClienteAsociado.Telefono;
+        }
+
+        #endregion
+
+        #region Métodos Privados - JWT y Seguridad
+
+        /// <summary>
+        /// Genera un token JWT con expiración de 20 minutos usando librerías estándar
         /// </summary>
         private string GenerarToken(Usuario usuario, int? clienteId = null)
         {
-            try
+            var jwtKey = _configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT Key no configurada");
+            var key = Encoding.UTF8.GetBytes(jwtKey);
+
+            var claims = new List<Claim>
             {
-                var header = new { alg = "HS256", typ = "JWT" };
-                var now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                var exp = now + TOKEN_EXPIRATION_SECONDS;
+                new Claim("sub", usuario.Id.ToString()),
+                new Claim("email", usuario.Email),
+                new Claim("role", usuario.Rol),
+                new Claim("nombre", usuario.Nombre ?? usuario.Email)
+            };
 
-                var payload = new Dictionary<string, object>
-                {
-                    { "sub", usuario.Id.ToString() },
-                    { "email", usuario.Email },
-                    { "role", usuario.Rol },
-                    { "nombre", usuario.Nombre ?? usuario.Email },
-                    { "iat", now },
-                    { "exp", exp }
-                };
+            if (clienteId.HasValue)
+                claims.Add(new Claim("client_id", clienteId.Value.ToString()));
 
-                // Agregar client_id si es un cliente
-                if (clienteId.HasValue)
-                {
-                    payload.Add("client_id", clienteId.Value.ToString());
-                }
-
-                var base64Header = Convert.ToBase64String(
-                    Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(header)))
-                    .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-
-                var base64Payload = Convert.ToBase64String(
-                    Encoding.UTF8.GetBytes(System.Text.Json.JsonSerializer.Serialize(payload)))
-                    .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-
-                using var hmac = new HMACSHA256(Encoding.UTF8.GetBytes(JWT_SECRET));
-                var input = Encoding.UTF8.GetBytes($"{base64Header}.{base64Payload}");
-                var hash = hmac.ComputeHash(input);
-                var signature = Convert.ToBase64String(hash)
-                    .Replace('+', '-').Replace('/', '_').TrimEnd('=');
-
-                return $"{base64Header}.{base64Payload}.{signature}";
-            }
-            catch (Exception ex)
+            var tokenDescriptor = new SecurityTokenDescriptor
             {
-                throw new InvalidOperationException("Error al generar token JWT", ex);
-            }
+                Subject = new ClaimsIdentity(claims),
+                Expires = DateTime.UtcNow.AddSeconds(TOKEN_EXPIRATION_SECONDS),
+                Issuer = _configuration["Jwt:Issuer"],
+                Audience = _configuration["Jwt:Audience"],
+                SigningCredentials = new SigningCredentials(new SymmetricSecurityKey(key), SecurityAlgorithms.HmacSha256Signature)
+            };
+
+            var tokenHandler = new JwtSecurityTokenHandler();
+            var token = tokenHandler.CreateToken(tokenDescriptor);
+
+            return tokenHandler.WriteToken(token);
         }
 
-        /// <summary>
-        /// Hash de contraseña usando SHA256
-        /// </summary>
-        private string HashPassword(string password)
+        private static string HashPassword(string password)
         {
             using var sha256 = SHA256.Create();
-            var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-            return Convert.ToBase64String(bytes);
+            return Convert.ToBase64String(sha256.ComputeHash(Encoding.UTF8.GetBytes(password)));
         }
 
-        /// <summary>
-        /// Verifica contraseña
-        /// </summary>
-        private bool VerificarPassword(string password, string hash)
-        {
-            var hashOfInput = HashPassword(password);
-            return hashOfInput == hash;
-        }
+        private static bool VerificarPassword(string password, string hash) =>
+            HashPassword(password) == hash;
+
+        #endregion
     }
 }

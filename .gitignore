@@ -361,3 +361,29 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+
+# macOS folder attributes file
+.DS_Store
+# Thumbs.db file
+Thumbs.db
+# ehthumbs.db file
+ehthumbs.db
+# Desktop.ini file
+Desktop.ini
+# Recycle Bin used on file shares
+$RECYCLE.BIN/
+# Windows image file cache
+ehthumbs_vista.db
+# Folder config file
+Desktop.ini
+# Icon cache database
+IconCache.db
+# Microsoft Office temporary files
+~$*
+# Windows Installer files
+*.cab
+*.msi
+*.msm
+*.msp
+# Windows shortcuts
+*.lnk   

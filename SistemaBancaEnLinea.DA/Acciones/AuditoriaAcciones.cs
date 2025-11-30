@@ -14,17 +14,26 @@ namespace SistemaBancaEnLinea.DA.Acciones
 
         public async Task RegistrarAsync(int usuarioId, string tipoOperacion, string descripcion, string? detalleJson = null)
         {
-            var registro = new RegistroAuditoria
+            try
             {
-                UsuarioId = usuarioId,
-                TipoOperacion = tipoOperacion,
-                Descripcion = descripcion,
-                DetalleJson = detalleJson,
-                FechaHora = DateTime.UtcNow
-            };
+                var registro = new RegistroAuditoria
+                {
+                    UsuarioId = usuarioId != 0 ? usuarioId : 1,
+                    TipoOperacion = tipoOperacion,
+                    Descripcion = descripcion,
+                    DetalleJson = detalleJson,
+                    FechaHora = DateTime.UtcNow
+                };
 
-            _context.RegistrosAuditoria.Add(registro);
-            await _context.SaveChangesAsync();
+                _context.RegistrosAuditoria.Add(registro);
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                // Manejo de errores (puede ser logging, rethrow, etc.)
+                throw new Exception("Error registrando auditoría", ex);
+            }
+
         }
 
         public async Task<List<RegistroAuditoria>> ObtenerPorFechasAsync(DateTime fechaInicio, DateTime fechaFin)
