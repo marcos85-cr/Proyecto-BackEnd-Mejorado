@@ -49,10 +49,22 @@ namespace SistemaBancaEnLinea.DA.Acciones
             await _context.SaveChangesAsync();
         }
 
+        /// <summary>
+        /// Obtiene transacciones donde el cliente es el originador o el destinatario
+        /// </summary>
         public async Task<List<Transaccion>> ObtenerPorClienteAsync(int clienteId)
         {
+            var cuentasClienteIds = await _context.Cuentas
+                .Where(c => c.ClienteId == clienteId)
+                .Select(c => c.Id)
+                .ToListAsync();
+
             return await _context.Transacciones
-                .Where(t => t.ClienteId == clienteId)
+                .Include(t => t.CuentaOrigen)
+                .Include(t => t.CuentaDestino)
+                .Include(t => t.Beneficiario)
+                .Where(t => t.ClienteId == clienteId ||
+                           (t.CuentaDestinoId.HasValue && cuentasClienteIds.Contains(t.CuentaDestinoId.Value)))
                 .OrderByDescending(t => t.FechaCreacion)
                 .ToListAsync();
         }
