@@ -200,5 +200,13 @@ namespace SistemaBancaEnLinea.BW
                 throw;
             }
         }
+
+        /// <summary>
+        /// Verifica si el beneficiario tiene operaciones pendientes
+        /// </summary>
+        public async Task<bool> TieneOperacionesPendientesAsync(int beneficiarioId)
+        {
+            return await _beneficiarioAcciones.TieneOperacionesPendientesAsync(beneficiarioId);
+        }
     }
 }

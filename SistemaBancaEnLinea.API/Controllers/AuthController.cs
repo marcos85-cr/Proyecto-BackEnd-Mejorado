@@ -5,10 +5,6 @@ using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
-    /// <summary>
-    /// Controlador de autenticación
-    /// Solo orquestación HTTP - toda la lógica está en BW/BC
-    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
@@ -18,16 +14,12 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         public AuthController(
             IUsuarioServicio usuarioServicio,
-            IClienteServicio clienteServicio,
             ILogger<AuthController> logger)
         {
             _usuarioServicio = usuarioServicio;
             _logger = logger;
         }
 
-        /// <summary>
-        /// POST: api/auth/login - Inicia sesión
-        /// </summary>
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequest request)
         {
@@ -48,9 +40,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
         
-        /// <summary>
-        /// POST: api/auth/check-email - Verifica disponibilidad de email
-        /// </summary>
         [HttpPost("check-email")]
         public async Task<IActionResult> CheckEmail([FromBody] CheckEmailRequest request)
         {

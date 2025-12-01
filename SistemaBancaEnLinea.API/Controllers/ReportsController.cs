@@ -30,10 +30,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// GET: api/reports/account-statement/{cuentaId}
-        /// Genera extracto de cuenta en JSON, PDF o CSV
-        /// </summary>
         [HttpGet("account-statement/{cuentaId}")]
         public async Task<IActionResult> GetAccountStatement(
             int cuentaId,
@@ -84,10 +80,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// GET: api/reports/my-summary
-        /// Resumen del cliente autenticado
-        /// </summary>
         [HttpGet("my-summary")]
         [Authorize(Roles = "Cliente")]
         public async Task<IActionResult> GetMySummary([FromQuery] string format = "json")
@@ -118,10 +110,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// GET: api/reports/client-summary/{clienteId}
-        /// Genera resumen de cliente (solo Admin/Gestor)
-        /// </summary>
         [HttpGet("client-summary/{clienteId}")]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> GetClientSummary(int clienteId, [FromQuery] string format = "json")
@@ -148,10 +136,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// GET: api/reports/transactions-report
-        /// Reporte de transacciones con filtros (Admin/Gestor)
-        /// </summary>
         [HttpGet("transactions-report")]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> GetTransactionsReport(
@@ -243,10 +227,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// GET: api/reports/dashboard-stats
-        /// Estadísticas para dashboard de administrador
-        /// </summary>
         [HttpGet("dashboard-stats")]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> GetDashboardStats()

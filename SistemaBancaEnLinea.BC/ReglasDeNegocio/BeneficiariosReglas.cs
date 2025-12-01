@@ -1,4 +1,5 @@
 ﻿using SistemaBancaEnLinea.BC.Modelos;
+using SistemaBancaEnLinea.BC.Modelos.DTOs;
 
 namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
 {
@@ -50,5 +51,40 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
         {
             return beneficiario.Estado == "Inactivo";
         }
+
+        #region ========== MAPEO DTOs ==========
+
+        public static BeneficiarioCreacionDto MapearACreacionDto(Beneficiario b) =>
+            new(b.Id, b.Alias, b.Banco, b.NumeroCuentaDestino, b.Estado);
+
+        public static BeneficiarioDetalleDto MapearADetalleDto(Beneficiario b, bool tieneOperaciones = false) =>
+            new(b.Id, b.Alias, b.Banco, b.Moneda, b.NumeroCuentaDestino, 
+                b.Pais, b.Estado, b.FechaCreacion, tieneOperaciones);
+
+        public static BeneficiarioConfirmacionDto MapearAConfirmacionDto(Beneficiario b) =>
+            new(b.Id, b.Alias, b.Estado);
+
+        public static BeneficiarioListaDto MapearAListaDto(Beneficiario b) =>
+            new(b.Id, b.Alias, b.Banco, b.Moneda, b.NumeroCuentaDestino,
+                b.Pais, b.Estado, b.FechaCreacion);
+
+        public static IEnumerable<BeneficiarioListaDto> MapearAListaDto(IEnumerable<Beneficiario> beneficiarios) =>
+            beneficiarios.Select(MapearAListaDto);
+
+        public static BeneficiarioActualizacionDto MapearAActualizacionDto(Beneficiario b) =>
+            new(b.Id, b.Alias, b.Estado);
+
+        public static Beneficiario MapearDesdeRequest(CrearBeneficiarioRequest request, int clienteId) =>
+            new()
+            {
+                ClienteId = clienteId,
+                Alias = request.Alias,
+                Banco = request.Banco,
+                Moneda = request.Moneda,
+                NumeroCuentaDestino = request.NumeroCuentaDestino,
+                Pais = request.Pais ?? "Costa Rica"
+            };
+
+        #endregion
     }
 }

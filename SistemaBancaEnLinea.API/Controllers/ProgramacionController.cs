@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.BC.Modelos.DTOs;
+using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
@@ -20,47 +22,27 @@ namespace SistemaBancaEnLinea.API.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// RF-D3/RF-E3: Obtener programaciones del cliente actual
-        /// </summary>
         [HttpGet("mis-programaciones")]
         public async Task<IActionResult> ObtenerMisProgramaciones()
         {
             try
             {
-                var clienteId = GetClienteIdFromToken();
+                var clienteId = GetClienteId();
                 if (clienteId == 0)
-                    return Unauthorized(new { success = false, message = "Cliente no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
                 var programaciones = await _programacionServicio.ObtenerProgramacionesClienteAsync(clienteId);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = programaciones.Select(p => new
-                    {
-                        transaccionId = p.TransaccionId,
-                        tipo = p.Transaccion?.Tipo,
-                        monto = p.Transaccion?.Monto,
-                        moneda = p.Transaccion?.Moneda,
-                        descripcion = p.Transaccion?.Descripcion,
-                        fechaProgramada = p.FechaProgramada,
-                        fechaLimiteCancelacion = p.FechaLimiteCancelacion,
-                        estadoJob = p.EstadoJob,
-                        puedeCancelarse = p.EstadoJob == "Pendiente" && DateTime.UtcNow < p.FechaLimiteCancelacion
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<ProgramacionListaDto>>.Ok(
+                    ProgramacionReglas.MapearAListaDto(programaciones)));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo programaciones: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo programaciones");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// RF-D3/RF-E3: Obtener programaciones de un cliente específico (admin/gestor)
-        /// </summary>
         [HttpGet("cliente/{clienteId}")]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> ObtenerProgramacionesCliente(int clienteId)
@@ -69,29 +51,16 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var programaciones = await _programacionServicio.ObtenerProgramacionesClienteAsync(clienteId);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = programaciones.Select(p => new
-                    {
-                        transaccionId = p.TransaccionId,
-                        tipo = p.Transaccion?.Tipo,
-                        monto = p.Transaccion?.Monto,
-                        moneda = p.Transaccion?.Moneda,
-                        fechaProgramada = p.FechaProgramada,
-                        estadoJob = p.EstadoJob
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<ProgramacionResumenDto>>.Ok(
+                    ProgramacionReglas.MapearAResumenDto(programaciones)));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo programaciones del cliente {ClienteId}", clienteId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Obtener detalle de una programación
-        /// </summary>
         [HttpGet("{programacionId}")]
         public async Task<IActionResult> ObtenerProgramacion(int programacionId)
         {
@@ -99,67 +68,68 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var programacion = await _programacionServicio.ObtenerProgramacionAsync(programacionId);
                 if (programacion == null)
-                    return NotFound(new { success = false, message = "Programación no encontrada." });
+                    return NotFound(ApiResponse.Fail("Programación no encontrada."));
 
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        transaccionId = programacion.TransaccionId,
-                        tipo = programacion.Transaccion?.Tipo,
-                        monto = programacion.Transaccion?.Monto,
-                        moneda = programacion.Transaccion?.Moneda,
-                        descripcion = programacion.Transaccion?.Descripcion,
-                        fechaProgramada = programacion.FechaProgramada,
-                        fechaLimiteCancelacion = programacion.FechaLimiteCancelacion,
-                        estadoJob = programacion.EstadoJob,
-                        puedeCancelarse = programacion.EstadoJob == "Pendiente" &&
-                                         DateTime.UtcNow < programacion.FechaLimiteCancelacion
-                    }
-                });
+                var clienteId = GetClienteId();
+                var role = GetUserRole();
+
+                // Validar acceso
+                if (role == "Cliente" && programacion.Transaccion?.ClienteId != clienteId)
+                    return Forbid();
+
+                return Ok(ApiResponse<ProgramacionDetalleDto>.Ok(
+                    ProgramacionReglas.MapearADetalleDto(programacion)));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo programación {Id}", programacionId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// RF-D3/RF-E3: Cancelar una programación (hasta 24 horas antes)
-        /// </summary>
-        [HttpDelete("{programacionId}")]
+        [HttpPut("{programacionId}/cancelar")]
         public async Task<IActionResult> CancelarProgramacion(int programacionId)
         {
             try
             {
-                var clienteId = GetClienteIdFromToken();
-                if (clienteId == 0)
-                    return Unauthorized(new { success = false, message = "Cliente no identificado." });
+                var programacion = await _programacionServicio.ObtenerProgramacionAsync(programacionId);
+                if (programacion == null)
+                    return NotFound(ApiResponse.Fail("Programación no encontrada."));
 
-                var resultado = await _programacionServicio.CancelarProgramacionAsync(programacionId, clienteId);
+                var clienteId = GetClienteId();
+                var role = GetUserRole();
 
-                return Ok(new
-                {
-                    success = true,
-                    message = "Programación cancelada exitosamente."
-                });
+                if (role == "Cliente" && programacion.Transaccion?.ClienteId != clienteId)
+                    return Forbid();
+
+                await _programacionServicio.CancelarProgramacionAsync(programacionId, clienteId);
+
+                return Ok(ApiResponse.Ok("Programación cancelada exitosamente."));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error cancelando programación: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error cancelando programación {Id}", programacionId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        private int GetClienteIdFromToken()
+        #region Métodos Privados
+
+        private int GetClienteId()
         {
-            var clienteIdClaim = User.FindFirst("client_id")?.Value;
-            return int.TryParse(clienteIdClaim, out var clienteId) ? clienteId : 0;
+            var claim = User.FindFirst("client_id")?.Value;
+            return int.TryParse(claim, out var id) ? id : 0;
         }
+
+        private string GetUserRole() =>
+            User.FindFirst("role")?.Value 
+            ?? User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value 
+            ?? "Cliente";
+
+        #endregion
     }
 }

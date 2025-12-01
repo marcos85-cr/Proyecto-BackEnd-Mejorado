@@ -125,10 +125,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Bloquea/desbloquea una cuenta
-        /// Restricción: Gestor NO puede bloquear ni cerrar cuentas
-        /// </summary>
         [HttpPut("{id}/block")]
         [Authorize(Roles = "Administrador,Cliente")]
         public async Task<IActionResult> BlockAccount(int id)
@@ -169,10 +165,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Cierra una cuenta
-        /// Restricción: Gestor NO puede bloquear ni cerrar cuentas
-        /// </summary>
         [HttpPut("{id}/close")]
         [Authorize(Roles = "Administrador,Cliente")]
         public async Task<IActionResult> CloseAccount(int id)
@@ -295,10 +287,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             return clienteId.HasValue && clienteId.Value == cuentaClienteId;
         }
 
-        /// <summary>
-        /// Valida si el usuario puede modificar la cuenta (bloquear, cerrar, eliminar)
-        /// Restricción: Admin no puede modificar cuentas de otros admins
-        /// </summary>
         private async Task<(bool Permitido, string? Error)> PuedoModificarCuentaAsync(Cuenta cuenta)
         {
             var role = GetUserRole();

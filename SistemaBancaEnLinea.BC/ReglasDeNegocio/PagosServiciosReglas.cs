@@ -1,4 +1,7 @@
-﻿namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
+﻿using SistemaBancaEnLinea.BC.Modelos;
+using SistemaBancaEnLinea.BC.Modelos.DTOs;
+
+namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
 {
     /// <summary>
     /// RF-E1: Creación de proveedores de servicio
@@ -51,5 +54,48 @@
         {
             return COMISION_PAGO_SERVICIO;
         }
+
+        #region ========== MAPEO DTOs ==========
+
+        public static ProveedorServicioDto MapearProveedorADto(ProveedorServicio p) =>
+            new(p.Id, p.Nombre, p.ReglaValidacionContrato);
+
+        public static IEnumerable<ProveedorServicioDto> MapearProveedoresADto(IEnumerable<ProveedorServicio> proveedores) =>
+            proveedores.Select(MapearProveedorADto);
+
+        public static ValidacionContratoResponse CrearRespuestaValidacion(bool esValido, string? nombreProveedor = null) =>
+            new(esValido,
+                esValido ? "Número de contrato válido." : "El número de contrato no cumple con el formato requerido.",
+                nombreProveedor);
+
+        public static PagoRealizadoDto MapearAPagoRealizado(Transaccion t) =>
+            new(t.Id, t.ComprobanteReferencia ?? "", t.Monto, t.Comision, 
+                t.Monto + t.Comision, t.Estado, t.FechaEjecucion,
+                t.ProveedorServicio?.Nombre, t.NumeroContrato ?? "");
+
+        public static PagoProgramadoDto MapearAPagoProgramado(Transaccion t, DateTime fechaProgramada) =>
+            new(t.Id, t.Estado, fechaProgramada, t.Monto, t.Comision,
+                t.ProveedorServicio?.Nombre);
+
+        public static PagoDetalleDto MapearAPagoDetalle(Transaccion t) =>
+            new(t.Id, t.ProveedorServicio?.Nombre, t.NumeroContrato ?? "",
+                t.Monto, t.Moneda, t.Comision, t.Estado, t.FechaCreacion,
+                t.FechaEjecucion, t.ComprobanteReferencia ?? "", t.Descripcion);
+
+        public static PagoListaDto MapearAPagoLista(Transaccion t) =>
+            new(t.Id, t.ProveedorServicio?.Nombre, t.NumeroContrato ?? "",
+                t.Monto, t.Moneda, t.Comision, t.Estado, t.FechaCreacion,
+                t.FechaEjecucion, t.ComprobanteReferencia ?? "");
+
+        public static IEnumerable<PagoListaDto> MapearAPagoLista(IEnumerable<Transaccion> transacciones) =>
+            transacciones.Select(MapearAPagoLista).OrderByDescending(p => p.FechaCreacion);
+
+        public static PagoResumenDto MapearAPagoResumen(Transaccion t) =>
+            new(t.Id, t.ProveedorServicio?.Nombre, t.Monto, t.Estado, t.FechaCreacion);
+
+        public static IEnumerable<PagoResumenDto> MapearAPagoResumen(IEnumerable<Transaccion> transacciones) =>
+            transacciones.Select(MapearAPagoResumen);
+
+        #endregion
     }
 }

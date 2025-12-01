@@ -178,5 +178,21 @@
 
             return cedula;
         }
+
+        #region ========== MAPEO DTOs ==========
+
+        public static Modelos.DTOs.ValidacionCedulaDto CrearValidacionDto(string cedula)
+        {
+            var esValida = ValidarIdentificacion(cedula);
+            var tipo = ObtenerTipoIdentificacion(cedula);
+            var formateada = FormatearCedula(cedula);
+            var mensaje = esValida ? $"Identificación válida ({tipo})" : "Identificación no válida";
+            return new Modelos.DTOs.ValidacionCedulaDto(esValida, tipo, formateada, mensaje);
+        }
+
+        public static Modelos.DTOs.IdentificacionDisponibilidadDto CrearDisponibilidadDto(bool existe) =>
+            new(!existe, existe ? "Esta identificación ya está registrada" : "Identificación disponible");
+
+        #endregion
     }
 }

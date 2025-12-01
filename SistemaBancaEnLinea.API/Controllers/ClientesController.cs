@@ -26,10 +26,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// Obtener todos los clientes (solo admin/gestor)
-        /// Restricción: Gestor solo ve sus clientes asignados
-        /// </summary>
         [HttpGet]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> ObtenerTodos()
@@ -61,10 +57,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Obtener cliente por ID
-        /// Restricción: Gestor solo puede ver clientes de su cartera
-        /// </summary>
         [HttpGet("{id}")]
         public async Task<IActionResult> ObtenerPorId(int id)
         {
@@ -95,9 +87,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Obtener mi perfil de cliente
-        /// </summary>
         [HttpGet("mi-perfil")]
         public async Task<IActionResult> ObtenerMiPerfil()
         {
@@ -116,9 +105,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Crear nuevo cliente con usuario y gestor asociado
-        /// </summary>
         [HttpPost]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> Crear([FromBody] ClienteRequest request)
@@ -143,10 +129,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Actualizar cliente existente
-        /// Restricción: Gestor solo puede actualizar clientes de su cartera
-        /// </summary>
         [HttpPut("{id}")]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> Actualizar(int id, [FromBody] ClienteActualizarRequest request)
@@ -184,9 +166,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Actualizar mi perfil
-        /// </summary>
         [HttpPut("mi-perfil")]
         public async Task<IActionResult> ActualizarMiPerfil([FromBody] ClienteActualizarRequest request)
         {
@@ -208,9 +187,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Eliminar cliente
-        /// </summary>
         [HttpDelete("{id}")]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> Eliminar(int id)
@@ -231,9 +207,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Vincular usuario a cliente
-        /// </summary>
         [HttpPut("{id}/vincular-usuario/{usuarioId}")]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> VincularUsuario(int id, int usuarioId)
@@ -254,9 +227,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Desvincular usuario del cliente
-        /// </summary>
         [HttpDelete("{id}/desvincular-usuario")]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> DesvincularUsuario(int id)
@@ -277,9 +247,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Asignar gestor a cliente
-        /// </summary>
         [HttpPut("{id}/asignar-gestor/{gestorId}")]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> AsignarGestor(int id, int gestorId)
@@ -300,9 +267,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Desasignar gestor del cliente
-        /// </summary>
         [HttpDelete("{id}/desasignar-gestor")]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> DesasignarGestor(int id)
@@ -323,9 +287,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// Obtener resumen de cuentas del cliente
-        /// </summary>
         [HttpGet("{id}/resumen")]
         public async Task<IActionResult> ObtenerResumen(int id)
         {

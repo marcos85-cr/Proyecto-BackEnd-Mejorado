@@ -1,7 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.BC.Modelos.DTOs;
+using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
@@ -11,69 +12,50 @@ namespace SistemaBancaEnLinea.API.Controllers
     public class BeneficiariosController : ControllerBase
     {
         private readonly IBeneficiarioServicio _beneficiarioServicio;
+        private readonly IAuditoriaServicio _auditoriaServicio;
         private readonly ILogger<BeneficiariosController> _logger;
 
         public BeneficiariosController(
             IBeneficiarioServicio beneficiarioServicio,
+            IAuditoriaServicio auditoriaServicio,
             ILogger<BeneficiariosController> logger)
         {
             _beneficiarioServicio = beneficiarioServicio;
+            _auditoriaServicio = auditoriaServicio;
             _logger = logger;
         }
 
-        /// <summary>
-        /// RF-C1: Crear beneficiario (inicia en estado Inactivo)
-        /// </summary>
         [HttpPost("crear")]
         public async Task<IActionResult> CrearBeneficiario([FromBody] CrearBeneficiarioRequest request)
         {
             try
             {
-                var clienteId = GetClienteIdFromToken();
+                var clienteId = GetClienteId();
                 if (clienteId == 0)
-                    return Unauthorized(new { success = false, message = "Cliente no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
-                var beneficiario = new Beneficiario
-                {
-                    ClienteId = clienteId,
-                    Alias = request.Alias,
-                    Banco = request.Banco,
-                    Moneda = request.Moneda,
-                    NumeroCuentaDestino = request.NumeroCuentaDestino,
-                    Pais = request.Pais
-                };
-
+                var beneficiario = BeneficiariosReglas.MapearDesdeRequest(request, clienteId);
                 var beneficiarioCreado = await _beneficiarioServicio.CrearBeneficiarioAsync(beneficiario);
 
-                return CreatedAtAction(nameof(ObtenerBeneficiario), new { id = beneficiarioCreado.Id }, new
-                {
-                    success = true,
-                    message = "Beneficiario creado. Debe confirmarlo antes de poder usarlo.",
-                    data = new
-                    {
-                        id = beneficiarioCreado.Id,
-                        alias = beneficiarioCreado.Alias,
-                        banco = beneficiarioCreado.Banco,
-                        numeroCuenta = beneficiarioCreado.NumeroCuentaDestino,
-                        estado = beneficiarioCreado.Estado
-                    }
-                });
+                await _auditoriaServicio.RegistrarAsync(
+                    GetUsuarioId(), "CreacionBeneficiario", $"Beneficiario {request.Alias} creado");
+
+                return CreatedAtAction(nameof(ObtenerBeneficiario), new { id = beneficiarioCreado.Id },
+                    ApiResponse<BeneficiarioCreacionDto>.Ok(
+                        BeneficiariosReglas.MapearACreacionDto(beneficiarioCreado),
+                        "Beneficiario creado. Debe confirmarlo antes de poder usarlo."));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error creando beneficiario: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error creando beneficiario");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Obtener beneficiario por ID
-        /// RF-C1: Cliente solo puede ver sus propios beneficiarios
-        /// </summary>
         [HttpGet("{id}")]
         public async Task<IActionResult> ObtenerBeneficiario(int id)
         {
@@ -81,119 +63,76 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var beneficiario = await _beneficiarioServicio.ObtenerBeneficiarioAsync(id);
                 if (beneficiario == null)
-                    return NotFound(new { success = false, message = "Beneficiario no encontrado." });
+                    return NotFound(ApiResponse.Fail("Beneficiario no encontrado."));
 
-                // Validar propiedad
-                var clienteId = GetClienteIdFromToken();
-                var userRole = GetUserRole();
-                
-                if (userRole == "Cliente" && beneficiario.ClienteId != clienteId)
+                if (!PuedoAccederBeneficiario(beneficiario.ClienteId))
                     return Forbid();
 
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        id = beneficiario.Id,
-                        alias = beneficiario.Alias,
-                        banco = beneficiario.Banco,
-                        moneda = beneficiario.Moneda,
-                        numeroCuenta = beneficiario.NumeroCuentaDestino,
-                        pais = beneficiario.Pais,
-                        estado = beneficiario.Estado,
-                        fechaCreacion = beneficiario.FechaCreacion
-                    }
-                });
+                var tieneOperaciones = await _beneficiarioServicio.TieneOperacionesPendientesAsync(id);
+
+                return Ok(ApiResponse<BeneficiarioDetalleDto>.Ok(
+                    BeneficiariosReglas.MapearADetalleDto(beneficiario, tieneOperaciones)));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo beneficiario {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// RF-C1: Confirmar beneficiario
-        /// </summary>
         [HttpPut("{id}/confirmar")]
         public async Task<IActionResult> ConfirmarBeneficiario(int id)
         {
             try
             {
-                // Validar propiedad
                 var beneficiarioExistente = await _beneficiarioServicio.ObtenerBeneficiarioAsync(id);
                 if (beneficiarioExistente == null)
-                    return NotFound(new { success = false, message = "Beneficiario no encontrado." });
+                    return NotFound(ApiResponse.Fail("Beneficiario no encontrado."));
 
-                var clienteId = GetClienteIdFromToken();
-                var userRole = GetUserRole();
-                
-                if (userRole == "Cliente" && beneficiarioExistente.ClienteId != clienteId)
+                if (!PuedoAccederBeneficiario(beneficiarioExistente.ClienteId))
                     return Forbid();
 
                 var beneficiario = await _beneficiarioServicio.ConfirmarBeneficiarioAsync(id);
 
-                return Ok(new
-                {
-                    success = true,
-                    message = "Beneficiario confirmado exitosamente.",
-                    data = new
-                    {
-                        id = beneficiario.Id,
-                        alias = beneficiario.Alias,
-                        estado = beneficiario.Estado
-                    }
-                });
+                await _auditoriaServicio.RegistrarAsync(
+                    GetUsuarioId(), "ConfirmacionBeneficiario", $"Beneficiario {beneficiario.Alias} confirmado");
+
+                return Ok(ApiResponse<BeneficiarioConfirmacionDto>.Ok(
+                    BeneficiariosReglas.MapearAConfirmacionDto(beneficiario),
+                    "Beneficiario confirmado exitosamente."));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error confirmando beneficiario {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Obtener beneficiarios del cliente actual
-        /// </summary>
         [HttpGet("mis-beneficiarios")]
         public async Task<IActionResult> ObtenerMisBeneficiarios()
         {
             try
             {
-                var clienteId = GetClienteIdFromToken();
+                var clienteId = GetClienteId();
                 if (clienteId == 0)
-                    return Unauthorized(new { success = false, message = "Cliente no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
                 var beneficiarios = await _beneficiarioServicio.ObtenerMisBeneficiariosAsync(clienteId);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = beneficiarios.Select(b => new
-                    {
-                        id = b.Id,
-                        alias = b.Alias,
-                        banco = b.Banco,
-                        moneda = b.Moneda,
-                        numeroCuenta = b.NumeroCuentaDestino,
-                        pais = b.Pais,
-                        estado = b.Estado,
-                        fechaCreacion = b.FechaCreacion
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<BeneficiarioListaDto>>.Ok(
+                    BeneficiariosReglas.MapearAListaDto(beneficiarios)));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo beneficiarios del cliente");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Obtener beneficiarios de un cliente específico (admin/gestor)
-        /// </summary>
         [HttpGet("cliente/{clienteId}")]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> ObtenerBeneficiariosCliente(int clienteId)
@@ -202,129 +141,108 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var beneficiarios = await _beneficiarioServicio.ObtenerMisBeneficiariosAsync(clienteId);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = beneficiarios.Select(b => new
-                    {
-                        id = b.Id,
-                        alias = b.Alias,
-                        banco = b.Banco,
-                        moneda = b.Moneda,
-                        numeroCuenta = b.NumeroCuentaDestino,
-                        pais = b.Pais,
-                        estado = b.Estado
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<BeneficiarioListaDto>>.Ok(
+                    BeneficiariosReglas.MapearAListaDto(beneficiarios)));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo beneficiarios del cliente {ClienteId}", clienteId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Actualizar alias de beneficiario
-        /// RF-C2: No se puede editar con operaciones pendientes
-        /// </summary>
         [HttpPut("{id}")]
         public async Task<IActionResult> ActualizarBeneficiario(int id, [FromBody] ActualizarBeneficiarioRequest request)
         {
             try
             {
-                // Validar propiedad
                 var beneficiarioExistente = await _beneficiarioServicio.ObtenerBeneficiarioAsync(id);
                 if (beneficiarioExistente == null)
-                    return NotFound(new { success = false, message = "Beneficiario no encontrado." });
+                    return NotFound(ApiResponse.Fail("Beneficiario no encontrado."));
 
-                var clienteId = GetClienteIdFromToken();
-                var userRole = GetUserRole();
-                
-                if (userRole == "Cliente" && beneficiarioExistente.ClienteId != clienteId)
+                if (!PuedoAccederBeneficiario(beneficiarioExistente.ClienteId))
                     return Forbid();
 
-                var beneficiario = await _beneficiarioServicio.ActualizarBeneficiarioAsync(id, request.Alias);
+                var beneficiario = await _beneficiarioServicio.ActualizarBeneficiarioAsync(id, request.NuevoAlias);
 
-                return Ok(new
-                {
-                    success = true,
-                    message = "Beneficiario actualizado.",
-                    data = new
-                    {
-                        id = beneficiario.Id,
-                        alias = beneficiario.Alias,
-                        estado = beneficiario.Estado
-                    }
-                });
+                await _auditoriaServicio.RegistrarAsync(
+                    GetUsuarioId(), "ActualizacionBeneficiario", $"Beneficiario {id} actualizado a alias: {request.NuevoAlias}");
+
+                return Ok(ApiResponse<BeneficiarioActualizacionDto>.Ok(
+                    BeneficiariosReglas.MapearAActualizacionDto(beneficiario),
+                    "Beneficiario actualizado."));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error actualizando beneficiario {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Eliminar beneficiario
-        /// RF-C2: No se puede eliminar con operaciones pendientes
-        /// </summary>
         [HttpDelete("{id}")]
         public async Task<IActionResult> EliminarBeneficiario(int id)
         {
             try
             {
-                // Validar propiedad
                 var beneficiarioExistente = await _beneficiarioServicio.ObtenerBeneficiarioAsync(id);
                 if (beneficiarioExistente == null)
-                    return NotFound(new { success = false, message = "Beneficiario no encontrado." });
+                    return NotFound(ApiResponse.Fail("Beneficiario no encontrado."));
 
-                var clienteId = GetClienteIdFromToken();
-                var userRole = GetUserRole();
-                
-                if (userRole == "Cliente" && beneficiarioExistente.ClienteId != clienteId)
+                if (!PuedoAccederBeneficiario(beneficiarioExistente.ClienteId))
                     return Forbid();
 
                 await _beneficiarioServicio.EliminarBeneficiarioAsync(id);
-                return Ok(new { success = true, message = "Beneficiario eliminado." });
+
+                await _auditoriaServicio.RegistrarAsync(
+                    GetUsuarioId(), "EliminacionBeneficiario", $"Beneficiario {beneficiarioExistente.Alias} eliminado");
+
+                return Ok(ApiResponse.Ok("Beneficiario eliminado."));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error eliminando beneficiario {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        private int GetClienteIdFromToken()
+        #region Métodos Privados
+
+        private int GetClienteId()
         {
-            var clienteIdClaim = User.FindFirst("client_id")?.Value;
-            return int.TryParse(clienteIdClaim, out var clienteId) ? clienteId : 0;
+            var claim = User.FindFirst("client_id")?.Value;
+            return int.TryParse(claim, out var id) ? id : 0;
         }
 
-        private string GetUserRole()
+        private int GetUsuarioId()
         {
-            return User.FindFirst("role")?.Value
-                ?? User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
-                ?? "Cliente";
+            var claim = User.FindFirst("sub")?.Value 
+                     ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(claim, out var id) ? id : 0;
         }
-    }
 
-    public class CrearBeneficiarioRequest
-    {
-        public string Alias { get; set; } = string.Empty;
-        public string Banco { get; set; } = string.Empty;
-        public string Moneda { get; set; } = string.Empty;
-        public string NumeroCuentaDestino { get; set; } = string.Empty;
-        public string Pais { get; set; } = string.Empty;
-    }
+        private string GetUserRole() =>
+            User.FindFirst("role")?.Value 
+            ?? User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value 
+            ?? "Cliente";
 
-    public class ActualizarBeneficiarioRequest
-    {
-        public string Alias { get; set; } = string.Empty;
+        private bool PuedoAccederBeneficiario(int beneficiarioClienteId)
+        {
+            var role = GetUserRole();
+            if (role is "Administrador" or "Gestor")
+                return true;
+
+            var clienteId = GetClienteId();
+            return clienteId > 0 && clienteId == beneficiarioClienteId;
+        }
+
+        #endregion
     }
 }

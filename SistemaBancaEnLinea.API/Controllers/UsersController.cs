@@ -112,9 +112,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// PUT: api/users/{id}/block - Bloquea/desbloquea usuario
-        /// </summary>
         [HttpPut("{id}/block")]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> ToggleBlockUser(int id)
@@ -144,9 +141,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// GET: api/users/check-email/{email} - Verifica disponibilidad de email
-        /// </summary>
         [HttpGet("check-email/{email}")]
         [AllowAnonymous]
         public async Task<IActionResult> CheckEmailAvailability(string email)
@@ -164,9 +158,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// PUT: api/users/{id}/change-password - Cambia contraseña
-        /// </summary>
         [HttpPut("{id}/change-password")]
         //[Authorize]
         public async Task<IActionResult> ChangePassword(int id, [FromBody] CambioContrasenaRequest request)
@@ -199,9 +190,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        /// <summary>
-        /// DELETE: api/users/{id} - Elimina un usuario
-        /// </summary>
         [HttpDelete("{id}")]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> DeleteUser(int id)

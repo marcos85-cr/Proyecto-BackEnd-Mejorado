@@ -202,19 +202,7 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
     public record ProveedorServicioDto(
         int Id,
         string Nombre,
-        string Categoria,
-        string? Descripcion,
         string ReglaValidacionContrato
-    );
-
-    public record PagoServicioRequest(
-        int ProveedorServicioId,
-        int CuentaOrigenId,
-        string NumeroContrato,
-        decimal Monto,
-        string? Descripcion,
-        bool Programado = false,
-        DateTime? FechaProgramada = null
     );
 
     public record ValidacionContratoResponse(
@@ -222,6 +210,93 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
         string Mensaje,
         string? NombreProveedor = null
     );
+
+    public record ValidarContratoRequest(
+        int ProveedorId,
+        string NumeroContrato);
+
+    public record RealizarPagoRequest(
+        int CuentaOrigenId,
+        int ProveedorServicioId,
+        string NumeroContrato,
+        decimal Monto,
+        string? Descripcion);
+
+    public record ProgramarPagoRequest(
+        int CuentaOrigenId,
+        int ProveedorServicioId,
+        string NumeroContrato,
+        decimal Monto,
+        DateTime FechaProgramada,
+        string? Descripcion);
+
+    public record PagoRealizadoDto(
+        int TransaccionId,
+        string ComprobanteReferencia,
+        decimal Monto,
+        decimal Comision,
+        decimal MontoTotal,
+        string Estado,
+        DateTime? FechaEjecucion,
+        string? Proveedor,
+        string NumeroContrato);
+
+    public record PagoProgramadoDto(
+        int TransaccionId,
+        string Estado,
+        DateTime FechaProgramada,
+        decimal Monto,
+        decimal Comision,
+        string? Proveedor);
+
+    public record PagoDetalleDto(
+        int Id,
+        string? Proveedor,
+        string NumeroContrato,
+        decimal Monto,
+        string Moneda,
+        decimal Comision,
+        string Estado,
+        DateTime FechaCreacion,
+        DateTime? FechaEjecucion,
+        string ComprobanteReferencia,
+        string? Descripcion);
+
+    public record PagoListaDto(
+        int Id,
+        string? Proveedor,
+        string NumeroContrato,
+        decimal Monto,
+        string Moneda,
+        decimal Comision,
+        string Estado,
+        DateTime FechaCreacion,
+        DateTime? FechaEjecucion,
+        string ComprobanteReferencia);
+
+    public record PagoResumenDto(
+        int Id,
+        string? Proveedor,
+        decimal Monto,
+        string Estado,
+        DateTime FechaCreacion);
+
+    public record BeneficiarioCreacionDto(
+        int Id,
+        string Alias,
+        string Banco,
+        string NumeroCuenta,
+        string Estado);
+
+    public record BeneficiarioConfirmacionDto(
+        int Id,
+        string Alias,
+        string Estado);
+
+    public record BeneficiarioActualizacionDto(
+        int Id,
+        string Alias,
+        string Estado);
 
     // ==================== REPORTES ====================
     
@@ -289,4 +364,89 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
         decimal MontoTransferidoMes,
         DateTime? UltimaTransaccion
     );
+
+    // ==================== PROGRAMACIÓN ====================
+
+    public record ProgramacionListaDto(
+        int TransaccionId,
+        string? Tipo,
+        decimal? Monto,
+        string? Moneda,
+        string? Descripcion,
+        DateTime FechaProgramada,
+        DateTime FechaLimiteCancelacion,
+        string EstadoJob,
+        bool PuedeCancelarse);
+
+    public record ProgramacionResumenDto(
+        int TransaccionId,
+        string? Tipo,
+        decimal? Monto,
+        string? Moneda,
+        DateTime FechaProgramada,
+        string EstadoJob);
+
+    public record ProgramacionDetalleDto(
+        int Id,
+        int TransaccionId,
+        string? Tipo,
+        decimal? Monto,
+        string? Moneda,
+        string? Descripcion,
+        DateTime FechaProgramada,
+        DateTime FechaLimiteCancelacion,
+        string EstadoJob,
+        bool PuedeCancelarse,
+        string? CuentaOrigen,
+        string? CuentaDestino);
+
+    // ==================== VALIDACIÓN ====================
+
+    public record ValidarCedulaRequest(string Cedula);
+
+    public record ValidacionCedulaDto(
+        bool EsValida,
+        string? Tipo,
+        string? CedulaFormateada,
+        string Mensaje);
+
+    public record IdentificacionDisponibilidadDto(
+        bool Disponible,
+        string Mensaje);
+
+    // ==================== PROVEEDORES DE SERVICIO ====================
+ 
+    public record ActualizarProveedorRequest(
+        string? Nombre,
+        string? ReglaValidacion);
+
+    public record ValidarReferenciaRequest(string NumeroReferencia);
+
+    public record ProveedorListaDto(
+        string Id,
+        string Nombre,
+        string Tipo,
+        string Icon,
+        string ReglaValidacion,
+        bool Activo,
+        string CreadoPor);
+
+    public record ProveedorDetalleDto(
+        string Id,
+        string Nombre,
+        string Tipo,
+        string Icon,
+        string ReglaValidacion,
+        bool Activo);
+
+    public record ProveedorCreacionDto(
+        string Id,
+        string Nombre,
+        string ReglaValidacion);
+
+    public record ValidacionReferenciaDto(
+        bool Valida,
+        decimal? Monto,
+        string? Nombre,
+        string Mensaje);
 }

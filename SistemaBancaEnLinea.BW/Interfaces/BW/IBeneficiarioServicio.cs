@@ -10,5 +10,6 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
         Task<Beneficiario> ActualizarBeneficiarioAsync(int id, string alias);
         Task EliminarBeneficiarioAsync(int id);
         Task<Beneficiario> ConfirmarBeneficiarioAsync(int id);
+        Task<bool> TieneOperacionesPendientesAsync(int beneficiarioId);
     }
 }
