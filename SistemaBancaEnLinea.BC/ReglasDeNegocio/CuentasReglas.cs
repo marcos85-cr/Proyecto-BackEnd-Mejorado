@@ -3,24 +3,16 @@
 namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
 {
     /// <summary>
-    /// RF-B1: Apertura de cuentas
-    /// RF-B2: Consulta de saldo
-    /// RF-B3: Bloqueo y cierre de cuentas
+    /// Reglas de negocio para la gestión de cuentas bancarias
     /// </summary>
     public static class CuentasReglas
     {
-        // RF-B1: Límites de cuentas
         public const int MAXIMO_CUENTAS_MISMO_TIPO_MONEDA = 3;
         public const int LONGITUD_NUMERO_CUENTA = 12;
         public const decimal LIMITE_DIARIO_DEFAULT = 500000m;
 
-        // RF-B1: Tipos de cuenta válidos
         public static readonly string[] TIPOS_CUENTA_VALIDOS = { "Ahorros", "Corriente", "Ahorro", "Inversión", "Plazo fijo" };
-
-        // RF-B1: Monedas válidas
         public static readonly string[] MONEDAS_VALIDAS = { "CRC", "USD" };
-
-        // RF-B1: Estados de cuenta
         public static readonly string[] ESTADOS_CUENTA = { "Activa", "Bloqueada", "Cerrada" };
 
         public static bool EsCuentaActiva(Cuenta cuenta) =>

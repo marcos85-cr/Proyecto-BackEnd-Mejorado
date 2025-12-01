@@ -47,28 +47,23 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                // Usuarios
                 var usuarios = await _usuarioServicio.ObtenerTodosAsync();
                 var totalUsuarios = usuarios.Count;
                 var usuariosActivos = usuarios.Count(u => !u.EstaBloqueado);
                 var usuariosBloqueados = usuarios.Count(u => u.EstaBloqueado);
 
-                // Clientes
                 var clientes = await _clienteServicio.ObtenerTodosAsync();
                 var totalClientes = clientes.Count;
                 var clienteIds = clientes.Select(c => c.Id).ToList();
 
-                // Cuentas
                 var cuentas = await _cuentaServicio.ObtenerTodasConRelacionesAsync();
                 var totalCuentas = cuentas.Count;
                 var cuentasActivas = cuentas.Count(c => c.Estado == "Activa");
                 var volumenTotal = cuentas.Where(c => c.Estado == "Activa").Sum(c => c.Saldo);
 
-                // Proveedores
                 var proveedores = await _proveedorServicio.ObtenerTodosAsync();
                 var totalProveedores = proveedores.Count;
 
-                // Operaciones de hoy (todas las de todos los clientes)
                 var operacionesHoy = clienteIds.Count > 0 
                     ? await _transferenciasServicio.ObtenerOperacionesDeHoyPorClientesAsync(clienteIds)
                     : new List<BC.Modelos.Transaccion>();

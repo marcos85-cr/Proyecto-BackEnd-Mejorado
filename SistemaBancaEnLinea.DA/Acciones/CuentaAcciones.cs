@@ -65,7 +65,6 @@ namespace SistemaBancaEnLinea.DA.Acciones
                 .ToListAsync();
         }
 
-        // RF-B1: Validar máximo 3 cuentas del mismo tipo y moneda
         public async Task<int> ContarCuentasPorTipoYMonedaAsync(int clienteId, string tipo, string moneda)
         {
             return await _context.Cuentas

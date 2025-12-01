@@ -382,8 +382,6 @@ namespace SistemaBancaEnLinea.BW
             return ms.ToArray();
         }
 
-        // ==================== HELPERS PARA PDF ====================
-
         private static Cell CrearCeldaInfo(string texto, PdfFont font)
         {
             return new Cell()

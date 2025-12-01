@@ -423,8 +423,6 @@ namespace SistemaBancaEnLinea.BW
                 .ToListAsync();
         }
 
-        // ========== GESTIÓN DE GESTOR ==========
-
         public async Task<List<Cliente>> ObtenerClientesPorGestorAsync(int gestorId)
         {
             return await _context.Clientes
@@ -521,8 +519,6 @@ namespace SistemaBancaEnLinea.BW
                 }
             });
         }
-
-        // ========== VINCULACIÓN USUARIO-CLIENTE ==========
 
         public async Task<ResultadoOperacion<bool>> VincularUsuarioAsync(int clienteId, int usuarioId)
         {

@@ -116,7 +116,6 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
             if (identificacion.Length > LONGITUD_MAXIMA_IDENTIFICACION)
                 return ResultadoValidacion.Error($"La identificación no puede exceder {LONGITUD_MAXIMA_IDENTIFICACION} caracteres.");
 
-            // Validar que solo contenga caracteres alfanuméricos
             if (!System.Text.RegularExpressions.Regex.IsMatch(identificacion, @"^[a-zA-Z0-9\-]+$"))
                 return ResultadoValidacion.Error("La identificación solo puede contener letras, números y guiones.");
 
@@ -139,7 +138,6 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
                 return ResultadoValidacion.Exito();
             }
 
-            // Limpiar espacios y caracteres de formato
             var telefonoLimpio = telefono.Replace(" ", "").Replace("-", "").Replace("+", "");
 
             if (telefonoLimpio.Length < LONGITUD_MINIMA_TELEFONO)
@@ -148,7 +146,6 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
             if (telefonoLimpio.Length > LONGITUD_MAXIMA_TELEFONO)
                 return ResultadoValidacion.Error($"El teléfono no puede exceder {LONGITUD_MAXIMA_TELEFONO} dígitos.");
 
-            // Validar que solo contenga dígitos
             if (!System.Text.RegularExpressions.Regex.IsMatch(telefonoLimpio, @"^\d+$"))
                 return ResultadoValidacion.Error("El teléfono solo puede contener números.");
 

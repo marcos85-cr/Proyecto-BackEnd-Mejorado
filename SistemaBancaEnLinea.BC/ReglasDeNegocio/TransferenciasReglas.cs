@@ -1,25 +1,16 @@
 ﻿namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
 {
     /// <summary>
-    /// RF-D1: Pre-check de transferencia
-    /// RF-D2: Ejecución de transferencia con idempotency
-    /// RF-D3: Programación de transferencias
-    /// RF-D4: Estados de transacciones
+    /// Reglas de negocio para transferencias y transacciones
     /// </summary>
     public static class TransferenciasReglas
     {
-        // RF-D1: Límites de transferencia
-        public const decimal LIMITE_DIARIO_TRANSFERENCIA = 5000000; // 5 millones
-        public const decimal UMBRAL_APROBACION = 1000000; // 1 millón requiere aprobación
-        public const decimal MONTO_MINIMO = 100; // Monto mínimo permitido
-        
-        // Límite de autorización para administradores
-        public const decimal LIMITE_AUTORIZACION_ADMIN = 10000000; // 10 millones máximo que un admin puede aprobar
-        
-        // Límite de autorización para gestores (menor que admin)
-        public const decimal LIMITE_AUTORIZACION_GESTOR = 5000000; // 5 millones máximo que un gestor puede aprobar
+        public const decimal LIMITE_DIARIO_TRANSFERENCIA = 5000000;
+        public const decimal UMBRAL_APROBACION = 1000000;
+        public const decimal MONTO_MINIMO = 100;
+        public const decimal LIMITE_AUTORIZACION_ADMIN = 10000000;
+        public const decimal LIMITE_AUTORIZACION_GESTOR = 5000000;
 
-        // RF-D4: Estados de transacción
         public static readonly string[] ESTADOS_TRANSACCION =
         {
             "Exitosa",
@@ -29,7 +20,6 @@
             "Programada"
         };
 
-        // Tipos de transacción
         public static readonly string[] TIPOS_TRANSACCION = { "Transferencia", "PagoServicio" };
 
   

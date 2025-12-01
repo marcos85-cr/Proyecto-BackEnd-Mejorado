@@ -18,8 +18,6 @@ namespace SistemaBancaEnLinea.DA
 
             Console.WriteLine("Iniciando seed de datos...");
 
-            // ========== 1. CREAR USUARIOS ==========
-            // Los datos personales están en Usuario
             var adminUser = new Usuario
             {
                 Email = "admin@banco.com",
@@ -58,7 +56,6 @@ namespace SistemaBancaEnLinea.DA
             };
             context.Usuarios.Add(clienteUser);
 
-            // Usuario cliente adicional
             var clienteUser2 = new Usuario
             {
                 Email = "maria@banco.com",
@@ -76,8 +73,6 @@ namespace SistemaBancaEnLinea.DA
             await context.SaveChangesAsync();
             Console.WriteLine("Usuarios creados.");
 
-            // ========== 2. CREAR CLIENTES ==========
-            // Cliente solo tiene datos únicos (Direccion, FechaNacimiento)
             var cliente1 = new Cliente
             {
                 Direccion = "San José, Costa Rica",
@@ -102,14 +97,11 @@ namespace SistemaBancaEnLinea.DA
 
             await context.SaveChangesAsync();
 
-            // Actualizar usuarios con referencia al cliente
             clienteUser.ClienteId = cliente1.Id;
             clienteUser2.ClienteId = cliente2.Id;
             await context.SaveChangesAsync();
             Console.WriteLine("Clientes creados y asociados.");
 
-            // ========== 3. CREAR CUENTAS ==========
-            // Cuentas del Cliente 1
             var cuenta1CRC = new Cuenta
             {
                 Numero = "100000000001",
@@ -146,7 +138,6 @@ namespace SistemaBancaEnLinea.DA
             };
             context.Cuentas.Add(cuenta1Inversion);
 
-            // Cuentas del Cliente 2
             var cuenta2CRC = new Cuenta
             {
                 Numero = "100000000002",
@@ -174,7 +165,6 @@ namespace SistemaBancaEnLinea.DA
             await context.SaveChangesAsync();
             Console.WriteLine("Cuentas creadas.");
 
-            // ========== 4. CREAR PROVEEDORES DE SERVICIO ==========
             var proveedores = new List<ProveedorServicio>
             {
                 new() { Nombre = "ICE - Electricidad", ReglaValidacionContrato = @"^\d{8,12}$", CreadoPorUsuarioId = adminUser.Id },
@@ -190,10 +180,8 @@ namespace SistemaBancaEnLinea.DA
             await context.SaveChangesAsync();
             Console.WriteLine("Proveedores de servicio creados.");
 
-            // ========== 5. CREAR BENEFICIARIOS ==========
             var beneficiarios = new List<Beneficiario>
             {
-                // Beneficiarios del Cliente 1
                 new()
                 {
                     Alias = "Mamá",
@@ -234,7 +222,7 @@ namespace SistemaBancaEnLinea.DA
                     Moneda = "CRC",
                     NumeroCuentaDestino = "400500600700",
                     Pais = "Costa Rica",
-                    Estado = "Inactivo", // Pendiente de confirmación
+                    Estado = "Inactivo",
                     ClienteId = cliente1.Id,
                     FechaCreacion = DateTime.UtcNow.AddDays(-5)
                 },
@@ -249,7 +237,6 @@ namespace SistemaBancaEnLinea.DA
                     ClienteId = cliente1.Id,
                     FechaCreacion = DateTime.UtcNow.AddDays(-90)
                 },
-                // Beneficiarios del Cliente 2
                 new()
                 {
                     Alias = "Papá",
@@ -277,10 +264,8 @@ namespace SistemaBancaEnLinea.DA
             await context.SaveChangesAsync();
             Console.WriteLine("Beneficiarios creados.");
 
-            // ========== 6. CREAR TRANSACCIONES DE EJEMPLO ==========
             var transacciones = new List<Transaccion>
             {
-                // Transferencias del Cliente 1
                 new()
                 {
                     Tipo = "Transferencia",
@@ -376,7 +361,6 @@ namespace SistemaBancaEnLinea.DA
             await context.SaveChangesAsync();
             Console.WriteLine("Transacciones de ejemplo creadas.");
 
-            // ========== 7. CREAR REGISTROS DE AUDITORÍA ==========
             var auditorias = new List<RegistroAuditoria>
             {
                 new()

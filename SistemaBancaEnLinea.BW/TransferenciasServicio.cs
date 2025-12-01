@@ -281,7 +281,7 @@ namespace SistemaBancaEnLinea.BW
                 _logger.LogError($"Error ejecutando transferencia: {ex.Message}");
                 throw new InvalidOperationException($"Error en transferencia: {ex.Message}", ex);
             }
-            }); // Cierre de ExecuteAsync
+            });
         }
 
         /// <summary>
@@ -397,7 +397,7 @@ namespace SistemaBancaEnLinea.BW
                 _logger.LogError($"Error aprobando transacción {transaccionId}: {ex.Message}");
                 throw new InvalidOperationException($"Error aprobando transferencia: {ex.Message}", ex);
             }
-            }); // Cierre de ExecuteAsync
+            });
         }
 
         /// <summary>
@@ -618,10 +618,6 @@ namespace SistemaBancaEnLinea.BW
 
         #endregion
 
-
-
-        // Agregar al final de la clase TransferenciasServicio, antes del cierre
-
         /// <summary>
         /// Obtiene el historial completo de una cuenta específica
         /// </summary>
@@ -694,16 +690,9 @@ namespace SistemaBancaEnLinea.BW
 
             await _context.SaveChangesAsync();
 
-          /*  await _auditoriaServicio.RegistrarAsync(
-                clienteId,
-                "CancelacionTransferencia",
-                $"Transferencia {transaccionId} cancelada"
-            );*/
-
             return true;
         }
 
-        // Agregar esta clase al final del archivo, fuera de la clase TransferenciasServicio
         public class TransaccionesEstadisticas
         {
             public int TotalTransacciones { get; set; }

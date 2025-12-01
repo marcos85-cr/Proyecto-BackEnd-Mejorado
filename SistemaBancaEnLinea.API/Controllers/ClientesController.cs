@@ -76,8 +76,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 }
 
                 var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(id);
-                
-                // ClienteDetalleDto requiere datos calculados, mapeo manual
+
                 var usuario = cliente.UsuarioAsociado;
                 var cuentasActivas = cuentas.Count(c => c.Estado == ESTADO_CUENTA_ACTIVA);
                 var saldoTotal = cuentas.Where(c => c.Estado == ESTADO_CUENTA_ACTIVA).Sum(c => c.Saldo);
