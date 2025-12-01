@@ -61,6 +61,7 @@ namespace SistemaBancaEnLinea.DA.Acciones
         {
             return await _context.Cuentas
                 .Where(c => c.ClienteId == clienteId)
+                .OrderByDescending(c => c.FechaApertura)
                 .ToListAsync();
         }
 

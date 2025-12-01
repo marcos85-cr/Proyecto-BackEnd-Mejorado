@@ -153,8 +153,12 @@ namespace SistemaBancaEnLinea.BW
                 throw new InvalidOperationException(string.Join(", ", preCheck.Errores));
             }
 
-            // Transacción manual con rollback robusto
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
+            {
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
             {
@@ -277,6 +281,7 @@ namespace SistemaBancaEnLinea.BW
                 _logger.LogError($"Error ejecutando transferencia: {ex.Message}");
                 throw new InvalidOperationException($"Error en transferencia: {ex.Message}", ex);
             }
+            }); // Cierre de ExecuteAsync
         }
 
         /// <summary>
@@ -319,8 +324,12 @@ namespace SistemaBancaEnLinea.BW
             if (transaccion.ClienteId == 0)
                 throw new InvalidOperationException("La operación requiere validación previa del cliente.");
 
-            // Transacción manual con rollback robusto para aprobación
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
+            {
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
             {
@@ -388,6 +397,7 @@ namespace SistemaBancaEnLinea.BW
                 _logger.LogError($"Error aprobando transacción {transaccionId}: {ex.Message}");
                 throw new InvalidOperationException($"Error aprobando transferencia: {ex.Message}", ex);
             }
+            }); // Cierre de ExecuteAsync
         }
 
         /// <summary>
