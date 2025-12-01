@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
@@ -106,68 +107,75 @@ namespace SistemaBancaEnLinea.BW
                 throw new InvalidOperationException("Saldo insuficiente.");
             }
 
-            using var dbTransaction = await _context.Database.BeginTransactionAsync();
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            try
+            await strategy.ExecuteAsync(async () =>
             {
-                // Actualizar saldo cuenta origen
-                cuentaOrigen.Saldo -= transaccion.Monto;
-                await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
+                using var dbTransaction = await _context.Database.BeginTransactionAsync();
 
-                // Si es transferencia, acreditar cuenta destino
-                if (transaccion.Tipo == "Transferencia" && transaccion.CuentaDestinoId.HasValue)
+                try
                 {
-                    var cuentaDestino = await _cuentaAcciones.ObtenerPorIdAsync(transaccion.CuentaDestinoId.Value);
-                    if (cuentaDestino != null)
+                    // Actualizar saldo cuenta origen
+                    cuentaOrigen.Saldo -= transaccion.Monto;
+                    await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
+
+                    // Si es transferencia, acreditar cuenta destino
+                    if (transaccion.Tipo == "Transferencia" && transaccion.CuentaDestinoId.HasValue)
                     {
-                        cuentaDestino.Saldo += transaccion.Monto;
-                        await _cuentaAcciones.ActualizarAsync(cuentaDestino);
+                        var cuentaDestino = await _cuentaAcciones.ObtenerPorIdAsync(transaccion.CuentaDestinoId.Value);
+                        if (cuentaDestino != null)
+                        {
+                            cuentaDestino.Saldo += transaccion.Monto;
+                            await _cuentaAcciones.ActualizarAsync(cuentaDestino);
+                        }
                     }
+
+                    // Actualizar transacción y programación
+                    transaccion.Estado = "Exitosa";
+                    transaccion.FechaEjecucion = DateTime.UtcNow;
+                    transaccion.SaldoPosterior = cuentaOrigen.Saldo;
+                    await _transaccionAcciones.ActualizarAsync(transaccion);
+
+                    programacion.EstadoJob = "Ejecutado";
+                    await _programacionAcciones.ActualizarAsync(programacion);
+
+                    await dbTransaction.CommitAsync();
+
+                    // Auditoría fuera de la transacción para evitar rollback si falla el audit
+                    try
+                    {
+                        await _auditoriaAcciones.RegistrarAsync(
+                            transaccion.ClienteId,
+                            "EjecucionProgramacion",
+                            $"Programación {programacion.TransaccionId} ejecutada exitosamente"
+                        );
+                    }
+                    catch (Exception auditEx)
+                    {
+                        _logger.LogWarning($"Error registrando auditoría pero programación fue exitosa: {auditEx.Message}");
+                    }
+
+                    _logger.LogInformation($"Programación {programacion.TransaccionId} ejecutada exitosamente");
+                    return 0; // Retorno dummy para satisfacer ExecuteAsync
                 }
-
-                // Actualizar transacción y programación
-                transaccion.Estado = "Exitosa";
-                transaccion.FechaEjecucion = DateTime.UtcNow;
-                transaccion.SaldoPosterior = cuentaOrigen.Saldo;
-                await _transaccionAcciones.ActualizarAsync(transaccion);
-
-                programacion.EstadoJob = "Ejecutado";
-                await _programacionAcciones.ActualizarAsync(programacion);
-
-                await dbTransaction.CommitAsync();
-
-                // Auditoría fuera de la transacción para evitar rollback si falla el audit
-                try
+                catch (Exception ex)
                 {
-                    await _auditoriaAcciones.RegistrarAsync(
-                        transaccion.ClienteId,
-                        "EjecucionProgramacion",
-                        $"Programación {programacion.TransaccionId} ejecutada exitosamente"
-                    );
-                }
-                catch (Exception auditEx)
-                {
-                    _logger.LogWarning($"Error registrando auditoría pero programación fue exitosa: {auditEx.Message}");
-                }
+                    // Intentar rollback con manejo de errores
+                    try
+                    {
+                        await dbTransaction.RollbackAsync();
+                        _logger.LogWarning($"Transacción de programación revertida debido a error: {ex.Message}");
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogError($"Error crítico haciendo rollback de programación: {rollbackEx.Message}");
+                    }
 
-                _logger.LogInformation($"Programación {programacion.TransaccionId} ejecutada exitosamente");
-            }
-            catch (Exception ex)
-            {
-                // Intentar rollback con manejo de errores
-                try
-                {
-                    await dbTransaction.RollbackAsync();
-                    _logger.LogWarning($"Transacción de programación revertida debido a error: {ex.Message}");
+                    _logger.LogError($"Error ejecutando programación: {ex.Message}");
+                    throw new InvalidOperationException($"Error en ejecución de programación: {ex.Message}", ex);
                 }
-                catch (Exception rollbackEx)
-                {
-                    _logger.LogError($"Error crítico haciendo rollback de programación: {rollbackEx.Message}");
-                }
-
-                _logger.LogError($"Error ejecutando programación: {ex.Message}");
-                throw new InvalidOperationException($"Error en ejecución de programación: {ex.Message}", ex);
-            }
+            });
         }
     }
 }

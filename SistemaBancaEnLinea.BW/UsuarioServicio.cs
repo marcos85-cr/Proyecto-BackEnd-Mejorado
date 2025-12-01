@@ -140,14 +140,18 @@ namespace SistemaBancaEnLinea.BW
             if (await ExisteEmailAsync(request.Email))
                 return ResultadoOperacion<Usuario>.Fallo("El correo electrónico ya está registrado.");
 
-            // Transacción manual con rollback robusto para creación de usuario
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            try
+            return await strategy.ExecuteAsync(async () =>
             {
-                // Crear usuario
-                var usuario = new Usuario
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
                 {
+                    // Crear usuario
+                    var usuario = new Usuario
+                    {
                     Email = request.Email,
                     PasswordHash = HashPassword(request.Password!),
                     Rol = request.Role,
@@ -199,6 +203,7 @@ namespace SistemaBancaEnLinea.BW
                 var innerMessage = ex.InnerException?.Message ?? ex.Message;
                 return ResultadoOperacion<Usuario>.Fallo($"Error al crear usuario: {innerMessage}");
             }
+            }); // Cierre de ExecuteAsync
         }
 
         /// <summary>

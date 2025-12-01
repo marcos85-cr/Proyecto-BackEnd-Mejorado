@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
@@ -79,78 +80,83 @@ namespace SistemaBancaEnLinea.BW
             if (!CuentasReglas.EsCuentaActiva(cuentaOrigen))
                 throw new InvalidOperationException("La cuenta origen no está activa.");
 
-            // Transacción manual con rollback robusto para pagos
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            try
+            return await strategy.ExecuteAsync(async () =>
             {
-                // Validar saldo suficiente dentro de la transacción
-                if (cuentaOrigen.Saldo < request.Monto)
-                    throw new InvalidOperationException("Saldo insuficiente.");
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
-                // Crear transacción
-                var transaccion = new Transaccion
-                {
-                    Tipo = "PagoServicio",
-                    Estado = "Exitosa",
-                    Monto = request.Monto,
-                    Moneda = cuentaOrigen.Moneda,
-                    Comision = 0,
-                    IdempotencyKey = request.IdempotencyKey,
-                    FechaCreacion = DateTime.UtcNow,
-                    FechaEjecucion = DateTime.UtcNow,
-                    SaldoAnterior = cuentaOrigen.Saldo,
-                    SaldoPosterior = cuentaOrigen.Saldo - request.Monto,
-                    CuentaOrigenId = request.CuentaOrigenId,
-                    ProveedorServicioId = request.ProveedorServicioId,
-                    NumeroContrato = request.NumeroContrato,
-                    ClienteId = request.ClienteId,
-                    Descripcion = request.Descripcion ?? $"Pago a {proveedor.Nombre}",
-                    ComprobanteReferencia = $"PAG-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}"
-                };
-
-                var transaccionCreada = await _transaccionAcciones.CrearAsync(transaccion);
-
-                // Actualizar saldo (después de crear la transacción para tener registro)
-                cuentaOrigen.Saldo -= request.Monto;
-                await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
-
-                // Confirmar la transacción solo si todo fue exitoso
-                await transaction.CommitAsync();
-
-                // Auditoría (fuera de la transacción para no afectar rollback si falla)
                 try
                 {
-                    await _auditoriaAcciones.RegistrarAsync(
-                        request.ClienteId,
-                        "PagoServicio",
-                        $"Pago de {request.Monto} a {proveedor.Nombre}. Contrato: {request.NumeroContrato}"
-                    );
-                }
-                catch (Exception auditEx)
-                {
-                    _logger.LogWarning($"Error registrando auditoría pero pago fue exitoso: {auditEx.Message}");
-                }
+                    // Validar saldo suficiente dentro de la transacción
+                    if (cuentaOrigen.Saldo < request.Monto)
+                        throw new InvalidOperationException("Saldo insuficiente.");
 
-                _logger.LogInformation($"Pago de servicio {transaccionCreada.Id} realizado exitosamente");
-                return transaccionCreada;
-            }
-            catch (Exception ex)
-            {
-                // Intentar rollback con manejo de errores
-                try
-                {
-                    await transaction.RollbackAsync();
-                    _logger.LogWarning($"Transacción de pago revertida debido a error: {ex.Message}");
-                }
-                catch (Exception rollbackEx)
-                {
-                    _logger.LogError($"Error crítico haciendo rollback de pago: {rollbackEx.Message}");
-                }
+                    // Crear transacción
+                    var transaccion = new Transaccion
+                    {
+                        Tipo = "PagoServicio",
+                        Estado = "Exitosa",
+                        Monto = request.Monto,
+                        Moneda = cuentaOrigen.Moneda,
+                        Comision = 0,
+                        IdempotencyKey = request.IdempotencyKey,
+                        FechaCreacion = DateTime.UtcNow,
+                        FechaEjecucion = DateTime.UtcNow,
+                        SaldoAnterior = cuentaOrigen.Saldo,
+                        SaldoPosterior = cuentaOrigen.Saldo - request.Monto,
+                        CuentaOrigenId = request.CuentaOrigenId,
+                        ProveedorServicioId = request.ProveedorServicioId,
+                        NumeroContrato = request.NumeroContrato,
+                        ClienteId = request.ClienteId,
+                        Descripcion = request.Descripcion ?? $"Pago a {proveedor.Nombre}",
+                        ComprobanteReferencia = $"PAG-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}"
+                    };
 
-                _logger.LogError($"Error realizando pago: {ex.Message}");
-                throw new InvalidOperationException($"Error en pago de servicio: {ex.Message}", ex);
-            }
+                    var transaccionCreada = await _transaccionAcciones.CrearAsync(transaccion);
+
+                    // Actualizar saldo (después de crear la transacción para tener registro)
+                    cuentaOrigen.Saldo -= request.Monto;
+                    await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
+
+                    // Confirmar la transacción solo si todo fue exitoso
+                    await transaction.CommitAsync();
+
+                    // Auditoría (fuera de la transacción para no afectar rollback si falla)
+                    try
+                    {
+                        await _auditoriaAcciones.RegistrarAsync(
+                            request.ClienteId,
+                            "PagoServicio",
+                            $"Pago de {request.Monto} a {proveedor.Nombre}. Contrato: {request.NumeroContrato}"
+                        );
+                    }
+                    catch (Exception auditEx)
+                    {
+                        _logger.LogWarning($"Error registrando auditoría pero pago fue exitoso: {auditEx.Message}");
+                    }
+
+                    _logger.LogInformation($"Pago de servicio {transaccionCreada.Id} realizado exitosamente");
+                    return transaccionCreada;
+                }
+                catch (Exception ex)
+                {
+                    // Intentar rollback con manejo de errores
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogWarning($"Transacción de pago revertida debido a error: {ex.Message}");
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogError($"Error crítico haciendo rollback de pago: {rollbackEx.Message}");
+                    }
+
+                    _logger.LogError($"Error realizando pago: {ex.Message}");
+                    throw new InvalidOperationException($"Error en pago de servicio: {ex.Message}", ex);
+                }
+            });
         }
 
         public async Task<Transaccion> ProgramarPagoAsync(PagoServicioRequest request)
@@ -175,77 +181,82 @@ namespace SistemaBancaEnLinea.BW
             if (cuentaOrigen == null)
                 throw new InvalidOperationException("Cuenta origen no encontrada.");
 
-            // Transacción manual con rollback robusto para pagos programados
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            try
+            return await strategy.ExecuteAsync(async () =>
             {
-                // Crear transacción programada
-                var transaccion = new Transaccion
-                {
-                    Tipo = "PagoServicio",
-                    Estado = "Programada",
-                    Monto = request.Monto,
-                    Moneda = cuentaOrigen.Moneda,
-                    Comision = 0,
-                    IdempotencyKey = request.IdempotencyKey,
-                    FechaCreacion = DateTime.UtcNow,
-                    SaldoAnterior = cuentaOrigen.Saldo,
-                    SaldoPosterior = cuentaOrigen.Saldo,
-                    CuentaOrigenId = request.CuentaOrigenId,
-                    ProveedorServicioId = request.ProveedorServicioId,
-                    NumeroContrato = request.NumeroContrato,
-                    ClienteId = request.ClienteId,
-                    Descripcion = request.Descripcion ?? $"Pago programado a {proveedor.Nombre}",
-                    ComprobanteReferencia = $"PAG-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}"
-                };
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
-                var transaccionCreada = await _transaccionAcciones.CrearAsync(transaccion);
-
-                var programacion = new Programacion
-                {
-                    TransaccionId = transaccionCreada.Id,
-                    FechaProgramada = request.FechaProgramada.Value,
-                    FechaLimiteCancelacion = ProgramacionReglas.CalcularFechaLimiteCancelacion(request.FechaProgramada.Value),
-                    EstadoJob = "Pendiente"
-                };
-                await _programacionAcciones.CrearAsync(programacion);
-
-                // Confirmar la transacción solo si todo fue exitoso
-                await transaction.CommitAsync();
-
-                // Auditoría (fuera de la transacción)
                 try
                 {
-                    await _auditoriaAcciones.RegistrarAsync(
-                        request.ClienteId,
-                        "ProgramacionPagoServicio",
-                        $"Pago programado de {request.Monto} a {proveedor.Nombre} para {request.FechaProgramada:dd/MM/yyyy}"
-                    );
-                }
-                catch (Exception auditEx)
-                {
-                    _logger.LogWarning($"Error registrando auditoría pero programación fue exitosa: {auditEx.Message}");
-                }
+                    // Crear transacción programada
+                    var transaccion = new Transaccion
+                    {
+                        Tipo = "PagoServicio",
+                        Estado = "Programada",
+                        Monto = request.Monto,
+                        Moneda = cuentaOrigen.Moneda,
+                        Comision = 0,
+                        IdempotencyKey = request.IdempotencyKey,
+                        FechaCreacion = DateTime.UtcNow,
+                        SaldoAnterior = cuentaOrigen.Saldo,
+                        SaldoPosterior = cuentaOrigen.Saldo,
+                        CuentaOrigenId = request.CuentaOrigenId,
+                        ProveedorServicioId = request.ProveedorServicioId,
+                        NumeroContrato = request.NumeroContrato,
+                        ClienteId = request.ClienteId,
+                        Descripcion = request.Descripcion ?? $"Pago programado a {proveedor.Nombre}",
+                        ComprobanteReferencia = $"PAG-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid().ToString()[..8].ToUpper()}"
+                    };
 
-                return transaccionCreada;
-            }
-            catch (Exception ex)
-            {
-                // Intentar rollback con manejo de errores
-                try
-                {
-                    await transaction.RollbackAsync();
-                    _logger.LogWarning($"Transacción de programación revertida debido a error: {ex.Message}");
-                }
-                catch (Exception rollbackEx)
-                {
-                    _logger.LogError($"Error crítico haciendo rollback de programación: {rollbackEx.Message}");
-                }
+                    var transaccionCreada = await _transaccionAcciones.CrearAsync(transaccion);
 
-                _logger.LogError($"Error programando pago: {ex.Message}");
-                throw new InvalidOperationException($"Error programando pago de servicio: {ex.Message}", ex);
-            }
+                    var programacion = new Programacion
+                    {
+                        TransaccionId = transaccionCreada.Id,
+                        FechaProgramada = request.FechaProgramada.Value,
+                        FechaLimiteCancelacion = ProgramacionReglas.CalcularFechaLimiteCancelacion(request.FechaProgramada.Value),
+                        EstadoJob = "Pendiente"
+                    };
+                    await _programacionAcciones.CrearAsync(programacion);
+
+                    // Confirmar la transacción solo si todo fue exitoso
+                    await transaction.CommitAsync();
+
+                    // Auditoría (fuera de la transacción)
+                    try
+                    {
+                        await _auditoriaAcciones.RegistrarAsync(
+                            request.ClienteId,
+                            "ProgramacionPagoServicio",
+                            $"Pago programado de {request.Monto} a {proveedor.Nombre} para {request.FechaProgramada:dd/MM/yyyy}"
+                        );
+                    }
+                    catch (Exception auditEx)
+                    {
+                        _logger.LogWarning($"Error registrando auditoría pero programación fue exitosa: {auditEx.Message}");
+                    }
+
+                    return transaccionCreada;
+                }
+                catch (Exception ex)
+                {
+                    // Intentar rollback con manejo de errores
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogWarning($"Transacción de programación revertida debido a error: {ex.Message}");
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogError($"Error crítico haciendo rollback de programación: {rollbackEx.Message}");
+                    }
+
+                    _logger.LogError($"Error programando pago: {ex.Message}");
+                    throw new InvalidOperationException($"Error programando pago de servicio: {ex.Message}", ex);
+                }
+            });
         }
 
         public async Task<List<Transaccion>> ObtenerHistorialPagosAsync(int clienteId)

@@ -77,13 +77,17 @@ namespace SistemaBancaEnLinea.BW
                 }
             }
 
-            // Transacción manual con rollback robusto para creación de cliente
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            try
+            return await strategy.ExecuteAsync(async () =>
             {
-                // Re-obtener usuario dentro de la transacción
-                var usuarioTx = await _context.Usuarios.FindAsync(request.UsuarioId);
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    // Re-obtener usuario dentro de la transacción
+                    var usuarioTx = await _context.Usuarios.FindAsync(request.UsuarioId);
                 if (usuarioTx == null)
                     return ResultadoOperacion<Cliente>.Fallo("El usuario especificado no existe.");
 
@@ -167,6 +171,7 @@ namespace SistemaBancaEnLinea.BW
                 var innerMessage = ex.InnerException?.Message ?? ex.Message;
                 return ResultadoOperacion<Cliente>.Fallo($"Error al crear cliente: {innerMessage}");
             }
+            }); // Cierre de ExecuteAsync
         }
 
         private static string GenerarNumeroCuenta()
@@ -247,15 +252,19 @@ namespace SistemaBancaEnLinea.BW
                 }
             }
 
-            // Transacción manual con rollback robusto para actualización de cliente
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            try
+            return await strategy.ExecuteAsync(async () =>
             {
-                // Re-obtener cliente dentro de la transacción
-                var clienteTx = await _context.Clientes
-                    .Include(c => c.UsuarioAsociado)
-                    .FirstOrDefaultAsync(c => c.Id == id);
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    // Re-obtener cliente dentro de la transacción
+                    var clienteTx = await _context.Clientes
+                        .Include(c => c.UsuarioAsociado)
+                        .FirstOrDefaultAsync(c => c.Id == id);
 
                 if (clienteTx == null)
                     return ResultadoOperacion<Cliente>.Fallo("Cliente no encontrado.");
@@ -334,6 +343,7 @@ namespace SistemaBancaEnLinea.BW
                 var innerMessage = ex.InnerException?.Message ?? ex.Message;
                 return ResultadoOperacion<Cliente>.Fallo($"Error al actualizar cliente: {innerMessage}");
             }
+            }); // Cierre de ExecuteAsync
         }
 
         /// <summary>
@@ -349,14 +359,18 @@ namespace SistemaBancaEnLinea.BW
             if (cliente.Cuentas?.Any(c => c.Estado == "Activa") == true)
                 return ResultadoOperacion<bool>.Fallo("No se puede eliminar un cliente con cuentas activas.");
 
-            // Transacción manual con rollback robusto para eliminación de cliente
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            try
+            return await strategy.ExecuteAsync(async () =>
             {
-                var clienteTx = await _context.Clientes
-                    .Include(c => c.UsuarioAsociado)
-                    .FirstOrDefaultAsync(c => c.Id == id);
+                using var transaction = await _context.Database.BeginTransactionAsync();
+
+                try
+                {
+                    var clienteTx = await _context.Clientes
+                        .Include(c => c.UsuarioAsociado)
+                        .FirstOrDefaultAsync(c => c.Id == id);
 
                 if (clienteTx == null)
                     return ResultadoOperacion<bool>.Fallo("Cliente no encontrado.");
@@ -389,23 +403,24 @@ namespace SistemaBancaEnLinea.BW
                 }
 
                 return ResultadoOperacion<bool>.Exito(true);
-            }
-            catch (Exception ex)
-            {
-                // Intentar rollback con manejo de errores
-                try
-                {
-                    await transaction.RollbackAsync();
-                    _logger.LogWarning($"Transacción de eliminación de cliente revertida debido a error: {ex.Message}");
                 }
-                catch (Exception rollbackEx)
+                catch (Exception ex)
                 {
-                    _logger.LogError($"Error crítico haciendo rollback de eliminación de cliente: {rollbackEx.Message}");
-                }
+                    // Intentar rollback con manejo de errores
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogWarning($"Transacción de eliminación de cliente revertida debido a error: {ex.Message}");
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogError($"Error crítico haciendo rollback de eliminación de cliente: {rollbackEx.Message}");
+                    }
 
-                var innerMessage = ex.InnerException?.Message ?? ex.Message;
-                return ResultadoOperacion<bool>.Fallo($"Error al eliminar cliente: {innerMessage}");
-            }
+                    var innerMessage = ex.InnerException?.Message ?? ex.Message;
+                    return ResultadoOperacion<bool>.Fallo($"Error al eliminar cliente: {innerMessage}");
+                }
+            }); // Cierre de ExecuteAsync
         }
 
         public async Task<bool> ExisteIdentificacionAsync(string identificacion)

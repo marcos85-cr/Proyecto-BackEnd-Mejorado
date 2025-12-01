@@ -1,4 +1,5 @@
-﻿using SistemaBancaEnLinea.BC.Modelos;
+﻿using Microsoft.EntityFrameworkCore;
+using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.DA;
 using SistemaBancaEnLinea.DA.Acciones;
 
@@ -128,75 +129,81 @@ namespace SistemaBancaEnLinea.BW.CU
                 throw new InvalidOperationException(string.Join(", ", preCheck.Errores));
             }
 
-            // Usar transacción de base de datos para atomicidad
-            using var transaction = await _context.Database.BeginTransactionAsync();
+            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
+            var strategy = _context.Database.CreateExecutionStrategy();
 
-            try
+            return await strategy.ExecuteAsync(async () =>
             {
-                var cuentaOrigen = await _cuentaAcciones.ObtenerPorIdAsync(cuentaOrigenId);
+                // Usar transacción de base de datos para atomicidad
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
-                // Determinar estado inicial
-                var estadoInicial = preCheck.RequiereAprobacion ? "PendienteAprobacion" : "Exitosa";
-
-                // Crear transacción
-                var transaccion = new Transaccion
+                try
                 {
-                    Tipo = "Transferencia",
-                    Estado = estadoInicial,
-                    Monto = monto,
-                    Moneda = moneda,
-                    Comision = preCheck.Comision,
-                    IdempotencyKey = idempotencyKey,
-                    FechaCreacion = DateTime.UtcNow,
-                    SaldoAnterior = preCheck.SaldoAntes,
-                    SaldoPosterior = preCheck.SaldoDespues,
-                    CuentaOrigenId = cuentaOrigenId,
-                    CuentaDestinoId = cuentaDestinoId,
-                    BeneficiarioId = beneficiarioId,
-                    ClienteId = clienteId,
-                    Descripcion = descripcion,
-                    ComprobanteReferencia = GenerarReferenciaComprobante()
-                };
+                    var cuentaOrigen = await _cuentaAcciones.ObtenerPorIdAsync(cuentaOrigenId);
 
-                // Solo actualizar saldos si no requiere aprobación
-                if (!preCheck.RequiereAprobacion)
-                {
-                    // Debitar cuenta origen
-                    cuentaOrigen!.Saldo -= (monto + preCheck.Comision);
-                    await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
+                    // Determinar estado inicial
+                    var estadoInicial = preCheck.RequiereAprobacion ? "PendienteAprobacion" : "Exitosa";
 
-                    // Acreditar cuenta destino (si es interna)
-                    if (cuentaDestinoId.HasValue)
+                    // Crear transacción
+                    var transaccion = new Transaccion
                     {
-                        var cuentaDestino = await _cuentaAcciones.ObtenerPorIdAsync(cuentaDestinoId.Value);
-                        if (cuentaDestino != null)
+                        Tipo = "Transferencia",
+                        Estado = estadoInicial,
+                        Monto = monto,
+                        Moneda = moneda,
+                        Comision = preCheck.Comision,
+                        IdempotencyKey = idempotencyKey,
+                        FechaCreacion = DateTime.UtcNow,
+                        SaldoAnterior = preCheck.SaldoAntes,
+                        SaldoPosterior = preCheck.SaldoDespues,
+                        CuentaOrigenId = cuentaOrigenId,
+                        CuentaDestinoId = cuentaDestinoId,
+                        BeneficiarioId = beneficiarioId,
+                        ClienteId = clienteId,
+                        Descripcion = descripcion,
+                        ComprobanteReferencia = GenerarReferenciaComprobante()
+                    };
+
+                    // Solo actualizar saldos si no requiere aprobación
+                    if (!preCheck.RequiereAprobacion)
+                    {
+                        // Debitar cuenta origen
+                        cuentaOrigen!.Saldo -= (monto + preCheck.Comision);
+                        await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
+
+                        // Acreditar cuenta destino (si es interna)
+                        if (cuentaDestinoId.HasValue)
                         {
-                            cuentaDestino.Saldo += monto;
-                            await _cuentaAcciones.ActualizarAsync(cuentaDestino);
+                            var cuentaDestino = await _cuentaAcciones.ObtenerPorIdAsync(cuentaDestinoId.Value);
+                            if (cuentaDestino != null)
+                            {
+                                cuentaDestino.Saldo += monto;
+                                await _cuentaAcciones.ActualizarAsync(cuentaDestino);
+                            }
                         }
+
+                        transaccion.FechaEjecucion = DateTime.UtcNow;
                     }
 
-                    transaccion.FechaEjecucion = DateTime.UtcNow;
+                    var transaccionCreada = await _transaccionAcciones.CrearAsync(transaccion);
+
+                    await transaction.CommitAsync();
+
+                    // Auditoría
+                    await _auditoriaAcciones.RegistrarAsync(
+                        clienteId,
+                        "Transferencia",
+                        $"Transferencia de {monto} {moneda} desde cuenta {cuentaOrigen!.Numero}"
+                    );
+
+                    return transaccionCreada;
                 }
-
-                var transaccionCreada = await _transaccionAcciones.CrearAsync(transaccion);
-
-                await transaction.CommitAsync();
-
-                // Auditoría
-                await _auditoriaAcciones.RegistrarAsync(
-                    clienteId,
-                    "Transferencia",
-                    $"Transferencia de {monto} {moneda} desde cuenta {cuentaOrigen!.Numero}"
-                );
-
-                return transaccionCreada;
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
-            }
+                catch
+                {
+                    await transaction.RollbackAsync();
+                    throw;
+                }
+            });
         }
 
         private string GenerarReferenciaComprobante()
