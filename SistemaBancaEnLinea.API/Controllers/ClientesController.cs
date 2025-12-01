@@ -28,6 +28,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// Obtener todos los clientes (solo admin/gestor)
+        /// Restricción: Gestor solo ve sus clientes asignados
         /// </summary>
         [HttpGet]
         [Authorize(Roles = "Administrador,Gestor")]
@@ -35,7 +36,20 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clientes = await _clienteServicio.ObtenerTodosAsync();
+                var role = GetUserRole();
+                List<BC.Modelos.Cliente> clientes;
+
+                if (role == "Gestor")
+                {
+                    // Gestor solo ve sus clientes asignados
+                    var gestorId = GetUsuarioIdFromToken();
+                    clientes = await _clienteServicio.ObtenerClientesPorGestorAsync(gestorId);
+                }
+                else
+                {
+                    clientes = await _clienteServicio.ObtenerTodosAsync();
+                }
+
                 var clientesDto = clientes.Select(ClientesReglas.MapearAListaDto).ToList();
                 
                 return Ok(ApiResponse<object>.Ok(clientesDto));
@@ -49,6 +63,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// Obtener cliente por ID
+        /// Restricción: Gestor solo puede ver clientes de su cartera
         /// </summary>
         [HttpGet("{id}")]
         public async Task<IActionResult> ObtenerPorId(int id)
@@ -58,6 +73,15 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var cliente = await _clienteServicio.ObtenerClienteAsync(id);
                 if (cliente == null)
                     return NotFound(ApiResponse<object>.Fail("Cliente no encontrado."));
+
+                // Validar acceso para Gestor
+                var role = GetUserRole();
+                if (role == "Gestor")
+                {
+                    var gestorId = GetUsuarioIdFromToken();
+                    if (cliente.GestorAsignadoId != gestorId)
+                        return StatusCode(403, ApiResponse<object>.Fail("No puede acceder a clientes fuera de su cartera."));
+                }
 
                 var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(id);
                 var clienteDto = ClientesReglas.MapearADetalleDto(cliente, cuentas);
@@ -121,6 +145,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         /// <summary>
         /// Actualizar cliente existente
+        /// Restricción: Gestor solo puede actualizar clientes de su cartera
         /// </summary>
         [HttpPut("{id}")]
         [Authorize(Roles = "Administrador,Gestor")]
@@ -128,6 +153,22 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
+                // Validar acceso para Gestor
+                var role = GetUserRole();
+                if (role == "Gestor")
+                {
+                    var cliente = await _clienteServicio.ObtenerClienteAsync(id);
+                    if (cliente == null)
+                        return NotFound(ApiResponse<object>.Fail("Cliente no encontrado."));
+                    
+                    var gestorId = GetUsuarioIdFromToken();
+                    if (cliente.GestorAsignadoId != gestorId)
+                        return StatusCode(403, ApiResponse<object>.Fail("No puede modificar clientes fuera de su cartera."));
+                    
+                    // Gestor no puede cambiar el gestor asignado
+                    request = request with { GestorId = null };
+                }
+
                 var resultado = await _clienteServicio.ActualizarClienteAsync(id, request);
                 
                 if (!resultado.Exitoso)
@@ -340,6 +381,20 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             var clienteIdClaim = User.FindFirst("client_id")?.Value;
             return int.TryParse(clienteIdClaim, out var clienteId) ? clienteId : 0;
+        }
+
+        private int GetUsuarioIdFromToken()
+        {
+            var userIdClaim = User.FindFirst("sub")?.Value
+                ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(userIdClaim, out var userId) ? userId : 0;
+        }
+
+        private string GetUserRole()
+        {
+            return User.FindFirst("role")?.Value
+                ?? User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
+                ?? "Cliente";
         }
     }
 }

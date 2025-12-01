@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.BC.Modelos.DTOs;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
@@ -20,9 +21,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// RF-D1: Pre-check de transferencia (validar antes de ejecutar)
-        /// </summary>
         [HttpPost("pre-check")]
         public async Task<IActionResult> PreCheckTransferencia([FromBody] PreCheckTransferenciaRequest request)
         {
@@ -39,35 +37,28 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var resultado = await _transferenciasServicio.PreCheckTransferenciaAsync(transferRequest);
 
                 if (!resultado.PuedeEjecutar)
-                    return BadRequest(new { success = false, errores = resultado.Errores });
+                    return BadRequest(ApiResponse<IEnumerable<string>>.Fail(resultado.Errores.FirstOrDefault() ?? "Validación fallida"));
 
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        puedeEjecutar = resultado.PuedeEjecutar,
-                        saldoAntes = resultado.SaldoAntes,
-                        monto = resultado.Monto,
-                        comision = resultado.Comision,
-                        montoTotal = resultado.MontoTotal,
-                        saldoDespues = resultado.SaldoDespues,
-                        requiereAprobacion = resultado.RequiereAprobacion,
-                        limiteDisponible = resultado.LimiteDisponible,
-                        mensaje = resultado.Mensaje
-                    }
-                });
+                var dto = new PreCheckResultDto(
+                    resultado.PuedeEjecutar,
+                    resultado.SaldoAntes,
+                    resultado.Monto,
+                    resultado.Comision,
+                    resultado.MontoTotal,
+                    resultado.SaldoDespues,
+                    resultado.RequiereAprobacion,
+                    resultado.LimiteDisponible,
+                    resultado.Mensaje);
+
+                return Ok(ApiResponse<PreCheckResultDto>.Ok(dto));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error en pre-check: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error en pre-check de transferencia");
+                return StatusCode(500, ApiResponse<object>.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// RF-D2: Ejecutar transferencia (requiere Idempotency-Key)
-        /// </summary>
         [HttpPost("ejecutar")]
         public async Task<IActionResult> EjecutarTransferencia(
             [FromBody] EjecutarTransferenciaRequest request,
@@ -76,11 +67,11 @@ namespace SistemaBancaEnLinea.API.Controllers
             try
             {
                 if (string.IsNullOrWhiteSpace(idempotencyKey))
-                    return BadRequest(new { success = false, message = "La cabecera Idempotency-Key es requerida." });
+                    return BadRequest(ApiResponse<object>.Fail("La cabecera Idempotency-Key es requerida."));
 
-                var clienteId = GetClienteIdFromToken();
+                var clienteId = GetClienteId();
                 if (clienteId == 0)
-                    return Unauthorized(new { success = false, message = "Cliente no identificado." });
+                    return Unauthorized(ApiResponse<object>.Fail("Cliente no identificado."));
 
                 var transferRequest = new TransferRequest
                 {
@@ -98,38 +89,34 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 var transaccion = await _transferenciasServicio.EjecutarTransferenciaAsync(transferRequest);
 
-                return CreatedAtAction(nameof(ObtenerTransferencia), new { id = transaccion.Id }, new
+                var mensaje = transaccion.Estado switch
                 {
-                    success = true,
-                    message = transaccion.Estado == "PendienteAprobacion"
-                        ? "Transferencia pendiente de aprobación."
-                        : transaccion.Estado == "Programada"
-                            ? "Transferencia programada exitosamente."
-                            : "Transferencia ejecutada exitosamente.",
-                    data = new
-                    {
-                        transaccionId = transaccion.Id,
-                        estado = transaccion.Estado,
-                        comprobanteReferencia = transaccion.ComprobanteReferencia,
-                        fechaCreacion = transaccion.FechaCreacion,
-                        fechaEjecucion = transaccion.FechaEjecucion
-                    }
-                });
+                    "PendienteAprobacion" => "Transferencia pendiente de aprobación.",
+                    "Programada" => "Transferencia programada exitosamente.",
+                    _ => "Transferencia ejecutada exitosamente."
+                };
+
+                var dto = new TransferenciaEjecutadaDto(
+                    transaccion.Id,
+                    transaccion.Estado,
+                    transaccion.ComprobanteReferencia,
+                    transaccion.FechaCreacion,
+                    transaccion.FechaEjecucion);
+
+                return CreatedAtAction(nameof(ObtenerTransferencia), new { id = transaccion.Id },
+                    ApiResponse<TransferenciaEjecutadaDto>.Ok(dto, mensaje));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error ejecutando transferencia: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error ejecutando transferencia");
+                return StatusCode(500, ApiResponse<object>.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Obtener detalles de una transferencia
-        /// </summary>
         [HttpGet("{id}")]
         public async Task<IActionResult> ObtenerTransferencia(int id)
         {
@@ -137,78 +124,58 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var transaccion = await _transferenciasServicio.ObtenerTransaccionAsync(id);
                 if (transaccion == null)
-                    return NotFound(new { success = false, message = "Transferencia no encontrada." });
+                    return NotFound(ApiResponse<object>.Fail("Transferencia no encontrada."));
 
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        id = transaccion.Id,
-                        tipo = transaccion.Tipo,
-                        estado = transaccion.Estado,
-                        monto = transaccion.Monto,
-                        moneda = transaccion.Moneda,
-                        comision = transaccion.Comision,
-                        descripcion = transaccion.Descripcion,
-                        comprobanteReferencia = transaccion.ComprobanteReferencia,
-                        fechaCreacion = transaccion.FechaCreacion,
-                        fechaEjecucion = transaccion.FechaEjecucion,
-                        cuentaOrigenNumero = transaccion.CuentaOrigen?.Numero,
-                        cuentaDestinoNumero = transaccion.CuentaDestino?.Numero,
-                        beneficiarioAlias = transaccion.Beneficiario?.Alias,
-                        saldoAnterior = transaccion.SaldoAnterior,
-                        saldoPosterior = transaccion.SaldoPosterior
-                    }
-                });
+                var dto = new TransferenciaTransaccionDetalleDto(
+                    transaccion.Id,
+                    transaccion.Tipo,
+                    transaccion.Estado,
+                    transaccion.Monto,
+                    transaccion.Moneda,
+                    transaccion.Comision,
+                    transaccion.Descripcion,
+                    transaccion.ComprobanteReferencia,
+                    transaccion.FechaCreacion,
+                    transaccion.FechaEjecucion,
+                    transaccion.CuentaOrigen?.Numero,
+                    transaccion.CuentaDestino?.Numero,
+                    transaccion.Beneficiario?.Alias,
+                    transaccion.SaldoAnterior,
+                    transaccion.SaldoPosterior);
+
+                return Ok(ApiResponse<TransferenciaTransaccionDetalleDto>.Ok(dto));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo transferencia {Id}", id);
+                return StatusCode(500, ApiResponse<object>.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Obtener mis transferencias
-        /// </summary>
         [HttpGet("mis-transferencias")]
         public async Task<IActionResult> ObtenerMisTransferencias()
         {
             try
             {
-                var clienteId = GetClienteIdFromToken();
+                var clienteId = GetClienteId();
                 if (clienteId == 0)
-                    return Unauthorized(new { success = false, message = "Cliente no identificado." });
+                    return Unauthorized(ApiResponse<object>.Fail("Cliente no identificado."));
 
                 var transacciones = await _transferenciasServicio.ObtenerMisTransaccionesAsync(clienteId);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = transacciones.Select(t => new
-                    {
-                        id = t.Id,
-                        tipo = t.Tipo,
-                        estado = t.Estado,
-                        monto = t.Monto,
-                        moneda = t.Moneda,
-                        comision = t.Comision,
-                        descripcion = t.Descripcion,
-                        comprobanteReferencia = t.ComprobanteReferencia,
-                        fechaCreacion = t.FechaCreacion,
-                        fechaEjecucion = t.FechaEjecucion
-                    })
-                });
+                var dtos = transacciones.Select(t => new TransferenciaTransaccionListaDto(
+                    t.Id, t.Tipo, t.Estado, t.Monto, t.Moneda, t.Comision,
+                    t.Descripcion, t.ComprobanteReferencia, t.FechaCreacion, t.FechaEjecucion));
+
+                return Ok(ApiResponse<IEnumerable<TransferenciaTransaccionListaDto>>.Ok(dtos));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo mis transferencias");
+                return StatusCode(500, ApiResponse<object>.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Obtener historial de transferencias de un cliente (admin/gestor)
-        /// </summary>
         [HttpGet("cliente/{clienteId}")]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> ObtenerHistorialTransferencias(int clienteId)
@@ -217,62 +184,42 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var transacciones = await _transferenciasServicio.ObtenerMisTransaccionesAsync(clienteId);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = transacciones.Select(t => new
-                    {
-                        id = t.Id,
-                        tipo = t.Tipo,
-                        estado = t.Estado,
-                        monto = t.Monto,
-                        moneda = t.Moneda,
-                        fechaCreacion = t.FechaCreacion
-                    })
-                });
+                var dtos = transacciones.Select(t => new TransferenciaHistorialDto(
+                    t.Id, t.Tipo, t.Estado, t.Monto, t.Moneda, t.FechaCreacion));
+
+                return Ok(ApiResponse<IEnumerable<TransferenciaHistorialDto>>.Ok(dtos));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo historial de transferencias para cliente {ClienteId}", clienteId);
+                return StatusCode(500, ApiResponse<object>.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Aprobar transferencia pendiente (solo admin)
-        /// </summary>
         [HttpPut("{id}/aprobar")]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> AprobarTransferencia(int id)
         {
             try
             {
-                var aprobadorId = GetUserIdFromToken();
+                var aprobadorId = GetUsuarioId();
                 var transaccion = await _transferenciasServicio.AprobarTransaccionAsync(id, aprobadorId);
 
-                return Ok(new
-                {
-                    success = true,
-                    message = "Transferencia aprobada exitosamente.",
-                    data = new
-                    {
-                        id = transaccion.Id,
-                        estado = transaccion.Estado
-                    }
-                });
+                var dto = new TransferenciaEstadoDto(transaccion.Id, transaccion.Estado);
+
+                return Ok(ApiResponse<TransferenciaEstadoDto>.Ok(dto, "Transferencia aprobada exitosamente."));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error aprobando transferencia {Id}", id);
+                return StatusCode(500, ApiResponse<object>.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Rechazar transferencia pendiente (solo admin)
-        /// </summary>
         [HttpPut("{id}/rechazar")]
         [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> RechazarTransferencia(int id, [FromBody] RechazarTransferenciaRequest request)
@@ -280,35 +227,26 @@ namespace SistemaBancaEnLinea.API.Controllers
             try
             {
                 if (string.IsNullOrWhiteSpace(request.Razon))
-                    return BadRequest(new { success = false, message = "Debe proporcionar una razón." });
+                    return BadRequest(ApiResponse<object>.Fail("Debe proporcionar una razón."));
 
-                var aprobadorId = GetUserIdFromToken();
+                var aprobadorId = GetUsuarioId();
                 var transaccion = await _transferenciasServicio.RechazarTransaccionAsync(id, aprobadorId, request.Razon);
 
-                return Ok(new
-                {
-                    success = true,
-                    message = "Transferencia rechazada.",
-                    data = new
-                    {
-                        id = transaccion.Id,
-                        estado = transaccion.Estado
-                    }
-                });
+                var dto = new TransferenciaEstadoDto(transaccion.Id, transaccion.Estado);
+
+                return Ok(ApiResponse<TransferenciaEstadoDto>.Ok(dto, "Transferencia rechazada."));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse<object>.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error rechazando transferencia {Id}", id);
+                return StatusCode(500, ApiResponse<object>.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Descargar comprobante de transferencia
-        /// </summary>
         [HttpGet("{id}/comprobante")]
         public async Task<IActionResult> DescargarComprobante(int id)
         {
@@ -319,50 +257,30 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
             catch (InvalidOperationException ex)
             {
-                return NotFound(new { success = false, message = ex.Message });
+                return NotFound(ApiResponse<object>.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error descargando comprobante de transferencia {Id}", id);
+                return StatusCode(500, ApiResponse<object>.Fail("Error interno del servidor"));
             }
         }
 
-        private int GetClienteIdFromToken()
+        #region Helpers
+
+        private int GetClienteId()
         {
-            var clienteIdClaim = User.FindFirst("client_id")?.Value;
-            return int.TryParse(clienteIdClaim, out var clienteId) ? clienteId : 0;
+            var claim = User.FindFirst("client_id")?.Value;
+            return int.TryParse(claim, out var id) ? id : 0;
         }
 
-        private int GetUserIdFromToken()
+        private int GetUsuarioId()
         {
-            var userIdClaim = User.FindFirst("sub")?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            return int.TryParse(userIdClaim, out var userId) ? userId : 0;
+            var claim = User.FindFirst("sub")?.Value
+                ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(claim, out var id) ? id : 0;
         }
-    }
 
-    // DTOs
-    public class PreCheckTransferenciaRequest
-    {
-        public int CuentaOrigenId { get; set; }
-        public int? CuentaDestinoId { get; set; }
-        public int? BeneficiarioId { get; set; }
-        public decimal Monto { get; set; }
-    }
-
-    public class EjecutarTransferenciaRequest
-    {
-        public int CuentaOrigenId { get; set; }
-        public int? CuentaDestinoId { get; set; }
-        public int? BeneficiarioId { get; set; }
-        public decimal Monto { get; set; }
-        public string Moneda { get; set; } = "CRC";
-        public string? Descripcion { get; set; }
-        public bool Programada { get; set; }
-        public DateTime? FechaProgramada { get; set; }
-    }
-
-    public class RechazarTransferenciaRequest
-    {
-        public string Razon { get; set; } = string.Empty;
+        #endregion
     }
 }

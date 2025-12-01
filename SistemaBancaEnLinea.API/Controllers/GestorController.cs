@@ -1,15 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
-using SistemaBancaEnLinea.BC.Modelos;
+using SistemaBancaEnLinea.BC.Modelos.DTOs;
 using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
-    /// <summary>
-    /// Controlador para funcionalidades del rol Gestor
-    /// Gestión de cartera de clientes y operaciones
-    /// </summary>
     [ApiController]
     [Route("api/[controller]")]
     [Authorize(Roles = "Gestor")]
@@ -35,710 +31,478 @@ namespace SistemaBancaEnLinea.API.Controllers
             _logger = logger;
         }
 
-        #region ========== HELPERS ==========
+        #region Dashboard
 
-        private int GetGestorIdFromToken()
-        {
-            var userIdClaim = User.FindFirst("sub")?.Value
-                ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            return int.TryParse(userIdClaim, out var userId) ? userId : 0;
-        }
-
-        private string GetGestorNombreFromToken()
-        {
-            return User.FindFirst("nombre")?.Value ?? "Gestor";
-        }
-
-        #endregion
-
-        #region ========== DASHBOARD ==========
-
-        /// <summary>
-        /// GET: api/gestor/dashboard/stats
-        /// Obtiene estadísticas del dashboard del gestor
-        /// </summary>
         [HttpGet("dashboard/stats")]
         public async Task<IActionResult> GetDashboardStats()
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
-                // Obtener clientes asignados al gestor
                 var misClientes = await _clienteServicio.ObtenerClientesPorGestorAsync(gestorId);
-
-                int totalClientes = misClientes.Count;
                 int totalCuentasActivas = 0;
                 decimal volumenTotal = 0;
 
-                // Calcular estadísticas de cuentas
                 foreach (var cliente in misClientes)
                 {
                     var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(cliente.Id);
-                    var cuentasActivas = cuentas.Where(c => c.Estado == "Activa").ToList();
-                    totalCuentasActivas += cuentasActivas.Count;
-                    volumenTotal += cuentasActivas.Sum(c => c.Saldo);
+                    var activas = cuentas.Where(c => c.Estado == "Activa").ToList();
+                    totalCuentasActivas += activas.Count;
+                    volumenTotal += activas.Sum(c => c.Saldo);
                 }
 
-                // Obtener operaciones
                 var clienteIds = misClientes.Select(c => c.Id).ToList();
                 var operacionesHoy = await _transferenciasServicio.ObtenerOperacionesDeHoyPorClientesAsync(clienteIds);
-                var pendientesAprobacion = await _transferenciasServicio.ObtenerOperacionesPendientesPorClientesAsync(clienteIds);
+                var pendientes = await _transferenciasServicio.ObtenerOperacionesPendientesPorClientesAsync(clienteIds);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        myClients = totalClientes,
-                        activeAccounts = totalCuentasActivas,
-                        todayOperations = operacionesHoy.Count,
-                        pendingApprovals = pendientesAprobacion.Count,
-                        totalVolume = volumenTotal
-                    }
-                });
+                return Ok(ApiResponse<GestorDashboardDto>.Ok(new GestorDashboardDto(
+                    misClientes.Count, totalCuentasActivas, operacionesHoy.Count, 
+                    pendientes.Count, volumenTotal)));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo stats del dashboard: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo stats del dashboard");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// GET: api/gestor/operaciones-pendientes
-        /// Obtiene las operaciones pendientes de aprobación
-        /// </summary>
         [HttpGet("operaciones-pendientes")]
         public async Task<IActionResult> GetOperacionesPendientes()
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
                 var misClientes = await _clienteServicio.ObtenerClientesPorGestorAsync(gestorId);
                 var clienteIds = misClientes.Select(c => c.Id).ToList();
-                var operacionesPendientes = await _transferenciasServicio.ObtenerOperacionesPendientesPorClientesAsync(clienteIds);
+                var pendientes = await _transferenciasServicio.ObtenerOperacionesPendientesPorClientesAsync(clienteIds);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = operacionesPendientes.Select(op => new
-                    {
-                        id = op.Id.ToString(),
-                        clienteId = op.ClienteId.ToString(),
-                        clienteNombre = op.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
-                        tipo = op.Tipo,
-                        descripcion = op.Descripcion,
-                        monto = op.Monto,
-                        moneda = op.Moneda,
-                        comision = op.Comision,
-                        estado = op.Estado,
-                        fecha = op.FechaCreacion,
-                        cuentaOrigenNumero = op.CuentaOrigen?.Numero,
-                        cuentaDestinoNumero = op.CuentaDestino?.Numero,
-                        requiereAprobacion = true,
-                        esUrgente = op.Monto > 200000
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<OperacionPendienteDto>>.Ok(
+                    pendientes.Select(op => new OperacionPendienteDto(
+                        op.Id, op.ClienteId, op.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
+                        op.Tipo, op.Descripcion, op.Monto, op.Moneda, op.Comision, op.Estado,
+                        op.FechaCreacion, op.CuentaOrigen?.Numero, op.CuentaDestino?.Numero,
+                        true, op.Monto > 200000))));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo operaciones pendientes: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo operaciones pendientes");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
         #endregion
 
-        #region ========== GESTIÓN DE CLIENTES ==========
+        #region Clientes
 
-        /// <summary>
-        /// GET: api/gestor/mis-clientes
-        /// Obtiene todos los clientes asignados al gestor
-        /// </summary>
         [HttpGet("mis-clientes")]
         public async Task<IActionResult> GetMisClientes()
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
                 var misClientes = await _clienteServicio.ObtenerClientesPorGestorAsync(gestorId);
-
-                var clientesResponse = new List<object>();
+                var clientesDto = new List<ClienteGestorDto>();
                 int totalCuentas = 0;
                 decimal volumenTotal = 0;
 
                 foreach (var cliente in misClientes)
                 {
                     var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(cliente.Id);
-                    var cuentasActivas = cuentas.Where(c => c.Estado == "Activa").ToList();
-                    var volumenCliente = cuentasActivas.Sum(c => c.Saldo);
-
+                    var activas = cuentas.Where(c => c.Estado == "Activa").ToList();
+                    var volumen = activas.Sum(c => c.Saldo);
                     var transacciones = await _transferenciasServicio.ObtenerMisTransaccionesAsync(cliente.Id);
-                    var ultimaOperacion = transacciones.OrderByDescending(t => t.FechaCreacion).FirstOrDefault();
+                    var ultima = transacciones.OrderByDescending(t => t.FechaCreacion).FirstOrDefault();
 
-                    totalCuentas += cuentasActivas.Count;
-                    volumenTotal += volumenCliente;
+                    totalCuentas += activas.Count;
+                    volumenTotal += volumen;
 
-                    clientesResponse.Add(new
-                    {
-                        id = cliente.Id.ToString(),
-                        nombre = cliente.UsuarioAsociado?.Nombre ?? "N/A",
-                        email = cliente.UsuarioAsociado?.Email ?? "N/A",
-                        identificacion = cliente.UsuarioAsociado?.Identificacion ?? "N/A",
-                        telefono = cliente.UsuarioAsociado?.Telefono ?? "N/A",
-                        cuentasActivas = cuentasActivas.Count,
-                        ultimaOperacion = ultimaOperacion?.FechaCreacion ?? cliente.FechaRegistro,
-                        estado = cliente.Estado,
-                        volumenTotal = volumenCliente
-                    });
+                    clientesDto.Add(new ClienteGestorDto(
+                        cliente.Id, cliente.UsuarioAsociado?.Nombre ?? "N/A",
+                        cliente.UsuarioAsociado?.Email ?? "N/A",
+                        cliente.UsuarioAsociado?.Identificacion ?? "N/A",
+                        cliente.UsuarioAsociado?.Telefono ?? "N/A",
+                        activas.Count, ultima?.FechaCreacion ?? cliente.FechaRegistro,
+                        cliente.Estado, volumen));
                 }
 
-                return Ok(new
-                {
-                    success = true,
-                    data = clientesResponse,
-                    stats = new
-                    {
-                        totalClients = misClientes.Count,
-                        totalAccounts = totalCuentas,
-                        totalVolume = volumenTotal
-                    }
-                });
+                return Ok(ApiResponse<ClientesGestorResponseDto>.Ok(new ClientesGestorResponseDto(
+                    clientesDto, new ClientesStatsDto(misClientes.Count, totalCuentas, volumenTotal))));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo clientes del gestor: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo clientes del gestor");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// GET: api/gestor/clientes/{clienteId}
-        /// Obtiene el detalle de un cliente específico
-        /// </summary>
         [HttpGet("clientes/{clienteId}")]
         public async Task<IActionResult> GetDetalleCliente(int clienteId)
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
                 var cliente = await _clienteServicio.ObtenerClienteAsync(clienteId);
                 if (cliente == null)
-                    return NotFound(new { success = false, message = "Cliente no encontrado." });
+                    return NotFound(ApiResponse.Fail("Cliente no encontrado"));
 
-                // Verificar que el cliente pertenece al gestor
                 if (cliente.GestorAsignadoId != gestorId)
-                    return Forbid();
+                    return StatusCode(403, ApiResponse.Fail("No puede acceder a clientes fuera de su cartera"));
 
                 var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(clienteId);
                 var transacciones = await _transferenciasServicio.ObtenerMisTransaccionesAsync(clienteId);
-                var cuentasActivas = cuentas.Where(c => c.Estado == "Activa").ToList();
-                var ultimaOperacion = transacciones.OrderByDescending(t => t.FechaCreacion).FirstOrDefault();
+                var activas = cuentas.Where(c => c.Estado == "Activa").ToList();
+                var ultima = transacciones.OrderByDescending(t => t.FechaCreacion).FirstOrDefault();
 
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        id = cliente.Id,
-                        identificacion = cliente.UsuarioAsociado?.Identificacion ?? "N/A",
-                        nombre = cliente.UsuarioAsociado?.Nombre ?? "N/A",
-                        nombreCompleto = cliente.UsuarioAsociado?.Nombre ?? "N/A",
-                        telefono = cliente.UsuarioAsociado?.Telefono ?? "N/A",
-                        correo = cliente.UsuarioAsociado?.Email ?? "N/A",
-                        email = cliente.UsuarioAsociado?.Email ?? "N/A",
-                        estado = cliente.Estado,
-                        fechaRegistro = cliente.FechaRegistro,
-                        ultimaOperacion = ultimaOperacion?.FechaCreacion,
-                        cuentasActivas = cuentasActivas.Count,
-                        volumenTotal = cuentasActivas.Sum(c => c.Saldo),
-                        totalTransacciones = transacciones.Count,
-                        cuentas = cuentas.Select(c => new
-                        {
-                            id = c.Id,
-                            numero = c.Numero,
-                            tipo = c.Tipo,
-                            moneda = c.Moneda,
-                            saldo = c.Saldo,
-                            estado = c.Estado,
-                            fechaApertura = c.FechaApertura
-                        })
-                    }
-                });
+                var cuentasDto = cuentas.Select(c => new CuentaSimpleDto(
+                    c.Id, c.Numero, c.Tipo, c.Moneda, c.Saldo, c.Estado, c.FechaApertura)).ToList();
+
+                return Ok(ApiResponse<ClienteDetalleGestorDto>.Ok(new ClienteDetalleGestorDto(
+                    cliente.Id, cliente.UsuarioAsociado?.Identificacion ?? "N/A",
+                    cliente.UsuarioAsociado?.Nombre ?? "N/A",
+                    cliente.UsuarioAsociado?.Telefono ?? "N/A",
+                    cliente.UsuarioAsociado?.Email ?? "N/A",
+                    cliente.Estado, cliente.FechaRegistro, ultima?.FechaCreacion,
+                    activas.Count, activas.Sum(c => c.Saldo), transacciones.Count, cuentasDto)));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo detalle del cliente: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo detalle del cliente {Id}", clienteId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// GET: api/gestor/clientes/{clienteId}/cuentas
-        /// Obtiene las cuentas de un cliente
-        /// </summary>
         [HttpGet("clientes/{clienteId}/cuentas")]
         public async Task<IActionResult> GetCuentasCliente(int clienteId)
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
                 var cliente = await _clienteServicio.ObtenerClienteAsync(clienteId);
                 if (cliente == null)
-                    return NotFound(new { success = false, message = "Cliente no encontrado." });
+                    return NotFound(ApiResponse.Fail("Cliente no encontrado"));
 
                 if (cliente.GestorAsignadoId != gestorId)
-                    return Forbid();
+                    return StatusCode(403, ApiResponse.Fail("No puede acceder a clientes fuera de su cartera"));
 
                 var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(clienteId);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = cuentas.Select(c => new
-                    {
-                        id = c.Id,
-                        numeroCuenta = c.Numero,
-                        numero = c.Numero,
-                        tipo = c.Tipo,
-                        moneda = c.Moneda,
-                        saldo = c.Saldo,
-                        estado = c.Estado,
-                        fechaApertura = c.FechaApertura ?? DateTime.UtcNow,
-                        clienteId = c.ClienteId,
-                        clienteNombre = cliente.UsuarioAsociado?.Nombre ?? "N/A"
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<CuentaGestorDto>>.Ok(
+                    cuentas.Select(c => new CuentaGestorDto(
+                        c.Id, c.Numero, c.Tipo, c.Moneda, c.Saldo, c.Estado,
+                        c.FechaApertura ?? DateTime.UtcNow, clienteId,
+                        cliente.UsuarioAsociado?.Nombre ?? "N/A"))));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo cuentas del cliente: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo cuentas del cliente {Id}", clienteId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// GET: api/gestor/clientes/{clienteId}/transacciones
-        /// Obtiene las transacciones de un cliente con filtros
-        /// </summary>
         [HttpGet("clientes/{clienteId}/transacciones")]
         public async Task<IActionResult> GetTransaccionesCliente(
-            int clienteId, 
-            [FromQuery] DateTime? fechaInicio, 
+            int clienteId,
+            [FromQuery] DateTime? fechaInicio,
             [FromQuery] DateTime? fechaFin,
-            [FromQuery] string? tipo, 
+            [FromQuery] string? tipo,
             [FromQuery] string? estado)
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
                 var cliente = await _clienteServicio.ObtenerClienteAsync(clienteId);
                 if (cliente == null)
-                    return NotFound(new { success = false, message = "Cliente no encontrado." });
+                    return NotFound(ApiResponse.Fail("Cliente no encontrado"));
 
                 if (cliente.GestorAsignadoId != gestorId)
-                    return Forbid();
+                    return StatusCode(403, ApiResponse.Fail("No puede acceder a clientes fuera de su cartera"));
 
                 var transacciones = await _transferenciasServicio.ObtenerTransaccionesConFiltrosAsync(
                     clienteId, fechaInicio, fechaFin, tipo, estado);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = transacciones.Select(t => new
-                    {
-                        id = t.Id.ToString(),
-                        tipo = t.Tipo,
-                        descripcion = t.Descripcion,
-                        monto = t.Monto,
-                        moneda = t.Moneda,
-                        comision = t.Comision,
-                        estado = t.Estado,
-                        fecha = t.FechaCreacion,
-                        fechaEjecucion = t.FechaEjecucion,
-                        cuentaOrigenNumero = t.CuentaOrigen?.Numero,
-                        cuentaDestinoNumero = t.CuentaDestino?.Numero,
-                        comprobanteReferencia = t.ComprobanteReferencia
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<TransaccionGestorDto>>.Ok(
+                    transacciones.Select(t => new TransaccionGestorDto(
+                        t.Id, t.Tipo, t.Descripcion, t.Monto, t.Moneda, t.Comision, t.Estado,
+                        t.FechaCreacion, t.FechaEjecucion, t.CuentaOrigen?.Numero,
+                        t.CuentaDestino?.Numero, t.ComprobanteReferencia))));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo transacciones del cliente: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo transacciones del cliente {Id}", clienteId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// POST: api/gestor/clientes/{clienteId}/cuentas
-        /// Crea una nueva cuenta para un cliente
-        /// </summary>
         [HttpPost("clientes/{clienteId}/cuentas")]
         public async Task<IActionResult> CrearCuentaParaCliente(int clienteId, [FromBody] CrearCuentaGestorRequest request)
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
                 var cliente = await _clienteServicio.ObtenerClienteAsync(clienteId);
                 if (cliente == null)
-                    return NotFound(new { success = false, message = "Cliente no encontrado." });
+                    return NotFound(ApiResponse.Fail("Cliente no encontrado"));
 
                 if (cliente.GestorAsignadoId != gestorId)
-                    return Forbid();
+                    return StatusCode(403, ApiResponse.Fail("Solo puede crear cuentas para clientes de su cartera"));
 
-                // Validaciones
                 if (!CuentasReglas.ValidarTipoCuenta(request.Tipo))
-                    return BadRequest(new { success = false, message = "Tipo de cuenta inválido. Use: Ahorros, Corriente, Inversión o Plazo fijo" });
+                    return BadRequest(ApiResponse.Fail("Tipo de cuenta inválido"));
 
                 if (!CuentasReglas.ValidarMoneda(request.Moneda))
-                    return BadRequest(new { success = false, message = "Moneda inválida. Use: CRC o USD" });
+                    return BadRequest(ApiResponse.Fail("Moneda inválida. Use: CRC o USD"));
 
                 if (request.SaldoInicial < 0)
-                    return BadRequest(new { success = false, message = "El saldo inicial no puede ser negativo." });
+                    return BadRequest(ApiResponse.Fail("El saldo inicial no puede ser negativo"));
 
-                // Crear cuenta
-                var cuenta = await _cuentaServicio.CrearCuentaAsync(clienteId, request.Tipo, request.Moneda, request.SaldoInicial);
+                var cuentasExistentes = await _cuentaServicio.ObtenerMisCuentasAsync(clienteId);
+                var validacion = CuentasReglas.ValidarMaximoCuentasMismoTipoMoneda(
+                    cuentasExistentes, request.Tipo, request.Moneda);
 
-                // Registrar auditoría
+                if (!validacion.EsValido)
+                    return BadRequest(ApiResponse.Fail(validacion.Error!));
+
+                var cuenta = await _cuentaServicio.CrearCuentaAsync(
+                    clienteId, request.Tipo, request.Moneda, request.SaldoInicial);
+
                 await _auditoriaServicio.RegistrarAsync(gestorId, "CreacionCuentaPorGestor",
-                    $"Gestor creó cuenta {cuenta.Numero} para cliente {cliente.UsuarioAsociado?.Nombre ?? "N/A"}");
+                    $"Cuenta {cuenta.Numero} creada para cliente {cliente.UsuarioAsociado?.Nombre}");
 
-                return CreatedAtAction(nameof(GetCuentasCliente), new { clienteId = clienteId }, new
-                {
-                    success = true,
-                    message = "Cuenta creada exitosamente.",
-                    data = new
-                    {
-                        id = cuenta.Id,
-                        numero = cuenta.Numero,
-                        numeroCuenta = cuenta.Numero,
-                        tipo = cuenta.Tipo,
-                        moneda = cuenta.Moneda,
-                        saldo = cuenta.Saldo,
-                        estado = cuenta.Estado,
-                        clienteId = clienteId,
-                        cliente = cliente.UsuarioAsociado?.Nombre ?? "N/A",
-                        fechaApertura = cuenta.FechaApertura
-                    }
-                });
+                return CreatedAtAction(nameof(GetCuentasCliente), new { clienteId },
+                    ApiResponse<CuentaCreadaGestorDto>.Ok(new CuentaCreadaGestorDto(
+                        cuenta.Id, cuenta.Numero, cuenta.Tipo, cuenta.Moneda, cuenta.Saldo,
+                        cuenta.Estado, clienteId, cliente.UsuarioAsociado?.Nombre ?? "N/A",
+                        cuenta.FechaApertura), "Cuenta creada exitosamente"));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error creando cuenta para cliente: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error creando cuenta para cliente {Id}", clienteId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
         #endregion
 
-        #region ========== GESTIÓN DE OPERACIONES ==========
+        #region Operaciones
 
-        /// <summary>
-        /// GET: api/gestor/operaciones
-        /// Obtiene todas las operaciones con filtros
-        /// </summary>
         [HttpGet("operaciones")]
         public async Task<IActionResult> GetOperaciones(
-            [FromQuery] string? estado, 
-            [FromQuery] DateTime? startDate, 
+            [FromQuery] string? estado,
+            [FromQuery] DateTime? startDate,
             [FromQuery] DateTime? endDate,
-            [FromQuery] decimal? minAmount, 
+            [FromQuery] decimal? minAmount,
             [FromQuery] decimal? maxAmount,
-            [FromQuery] string? clientName, 
+            [FromQuery] string? clientName,
             [FromQuery] string? operationType)
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
                 var misClientes = await _clienteServicio.ObtenerClientesPorGestorAsync(gestorId);
                 var clienteIds = misClientes.Select(c => c.Id).ToList();
-                var todasOperaciones = await _transferenciasServicio.ObtenerOperacionesPorClientesAsync(clienteIds);
+                var todas = await _transferenciasServicio.ObtenerOperacionesPorClientesAsync(clienteIds);
 
-                // Aplicar filtros
-                var operacionesFiltradas = todasOperaciones.AsEnumerable();
+                var filtradas = todas.AsEnumerable();
 
                 if (!string.IsNullOrEmpty(estado) && estado != "all")
-                    operacionesFiltradas = operacionesFiltradas.Where(op => op.Estado == estado);
-
+                    filtradas = filtradas.Where(op => op.Estado == estado);
                 if (startDate.HasValue)
-                    operacionesFiltradas = operacionesFiltradas.Where(op => op.FechaCreacion.Date >= startDate.Value.Date);
-
+                    filtradas = filtradas.Where(op => op.FechaCreacion.Date >= startDate.Value.Date);
                 if (endDate.HasValue)
-                    operacionesFiltradas = operacionesFiltradas.Where(op => op.FechaCreacion.Date <= endDate.Value.Date);
-
+                    filtradas = filtradas.Where(op => op.FechaCreacion.Date <= endDate.Value.Date);
                 if (minAmount.HasValue && minAmount > 0)
-                    operacionesFiltradas = operacionesFiltradas.Where(op => op.Monto >= minAmount.Value);
-
+                    filtradas = filtradas.Where(op => op.Monto >= minAmount.Value);
                 if (maxAmount.HasValue && maxAmount > 0)
-                    operacionesFiltradas = operacionesFiltradas.Where(op => op.Monto <= maxAmount.Value);
-
+                    filtradas = filtradas.Where(op => op.Monto <= maxAmount.Value);
                 if (!string.IsNullOrEmpty(clientName))
-                {
-                    var searchTerm = clientName.ToLower().Trim();
-                    operacionesFiltradas = operacionesFiltradas.Where(op =>
-                        op.Cliente != null && op.Cliente.UsuarioAsociado != null && (op.Cliente.UsuarioAsociado.Nombre ?? "").ToLower().Contains(searchTerm));
-                }
-
+                    filtradas = filtradas.Where(op => (op.Cliente?.UsuarioAsociado?.Nombre ?? "").ToLower().Contains(clientName.ToLower()));
                 if (!string.IsNullOrEmpty(operationType))
-                {
-                    var searchType = operationType.ToLower().Trim();
-                    operacionesFiltradas = operacionesFiltradas.Where(op => op.Tipo.ToLower().Contains(searchType));
-                }
+                    filtradas = filtradas.Where(op => op.Tipo.ToLower().Contains(operationType.ToLower()));
 
-                var operacionesList = operacionesFiltradas.OrderByDescending(op => op.FechaCreacion).ToList();
+                var lista = filtradas.OrderByDescending(op => op.FechaCreacion).ToList();
+                var hoy = DateTime.UtcNow.Date;
 
-                // Resumen
-                var today = DateTime.UtcNow.Date;
-                var pending = todasOperaciones.Count(op => op.Estado == "PendienteAprobacion");
-                var approvedToday = todasOperaciones.Count(op => op.Estado == "Exitosa" && op.FechaEjecucion?.Date == today);
-                var rejectedToday = todasOperaciones.Count(op => op.Estado == "Rechazada" && op.FechaCreacion.Date == today);
+                var operacionesDto = lista.Select(op => new OperacionDto(
+                    op.Id, op.ClienteId, op.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
+                    op.Tipo, op.Descripcion, op.Monto, op.Moneda, op.Comision, op.Estado,
+                    op.FechaCreacion, op.CuentaOrigen?.Numero, op.CuentaDestino?.Numero,
+                    op.Estado == "PendienteAprobacion",
+                    op.Monto > 200000 && op.Estado == "PendienteAprobacion"));
 
-                return Ok(new
-                {
-                    success = true,
-                    data = operacionesList.Select(op => new
-                    {
-                        id = op.Id.ToString(),
-                        clienteId = op.ClienteId.ToString(),
-                        clienteNombre = op.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
-                        tipo = op.Tipo,
-                        descripcion = op.Descripcion,
-                        monto = op.Monto,
-                        moneda = op.Moneda,
-                        comision = op.Comision,
-                        estado = op.Estado,
-                        fecha = op.FechaCreacion,
-                        cuentaOrigenNumero = op.CuentaOrigen?.Numero,
-                        cuentaDestinoNumero = op.CuentaDestino?.Numero,
-                        requiereAprobacion = op.Estado == "PendienteAprobacion",
-                        esUrgente = op.Monto > 200000 && op.Estado == "PendienteAprobacion"
-                    }),
-                    summary = new 
-                    { 
-                        pending = pending, 
-                        approved = approvedToday, 
-                        rejected = rejectedToday 
-                    }
-                });
+                var resumen = new OperacionesResumenDto(
+                    todas.Count(op => op.Estado == "PendienteAprobacion"),
+                    todas.Count(op => op.Estado == "Exitosa" && op.FechaEjecucion?.Date == hoy),
+                    todas.Count(op => op.Estado == "Rechazada" && op.FechaCreacion.Date == hoy));
+
+                return Ok(ApiResponse<OperacionesResponseDto>.Ok(
+                    new OperacionesResponseDto(operacionesDto, resumen)));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo operaciones: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo operaciones");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// GET: api/gestor/operaciones/{operacionId}
-        /// Obtiene el detalle de una operación
-        /// </summary>
         [HttpGet("operaciones/{operacionId}")]
         public async Task<IActionResult> GetDetalleOperacion(int operacionId)
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
                 var operacion = await _transferenciasServicio.ObtenerTransaccionAsync(operacionId);
                 if (operacion == null)
-                    return NotFound(new { success = false, message = "Operación no encontrada." });
+                    return NotFound(ApiResponse.Fail("Operación no encontrada"));
 
                 var cliente = await _clienteServicio.ObtenerClienteAsync(operacion.ClienteId);
                 if (cliente == null || cliente.GestorAsignadoId != gestorId)
-                    return Forbid();
+                    return StatusCode(403, ApiResponse.Fail("No puede acceder a operaciones fuera de su cartera"));
 
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        id = operacion.Id.ToString(),
-                        clienteId = operacion.ClienteId.ToString(),
-                        clienteNombre = operacion.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
-                        tipo = operacion.Tipo,
-                        descripcion = operacion.Descripcion,
-                        monto = operacion.Monto,
-                        moneda = operacion.Moneda,
-                        comision = operacion.Comision,
-                        estado = operacion.Estado,
-                        fecha = operacion.FechaCreacion,
-                        fechaEjecucion = operacion.FechaEjecucion,
-                        cuentaOrigenNumero = operacion.CuentaOrigen?.Numero,
-                        cuentaDestinoNumero = operacion.CuentaDestino?.Numero,
-                        beneficiarioAlias = operacion.Beneficiario?.Alias,
-                        comprobanteReferencia = operacion.ComprobanteReferencia,
-                        saldoAnterior = operacion.SaldoAnterior,
-                        saldoPosterior = operacion.SaldoPosterior,
-                        requiereAprobacion = operacion.Estado == "PendienteAprobacion",
-                        esUrgente = operacion.Monto > 200000
-                    }
-                });
+                return Ok(ApiResponse<OperacionDetalleDto>.Ok(new OperacionDetalleDto(
+                    operacion.Id, operacion.ClienteId, operacion.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
+                    operacion.Tipo, operacion.Descripcion, operacion.Monto, operacion.Moneda,
+                    operacion.Comision, operacion.Estado, operacion.FechaCreacion, operacion.FechaEjecucion,
+                    operacion.CuentaOrigen?.Numero, operacion.CuentaDestino?.Numero,
+                    operacion.Beneficiario?.Alias, operacion.ComprobanteReferencia,
+                    operacion.SaldoAnterior, operacion.SaldoPosterior,
+                    operacion.Estado == "PendienteAprobacion", operacion.Monto > 200000)));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo detalle de operación: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo detalle de operación {Id}", operacionId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// PUT: api/gestor/operaciones/{operacionId}/aprobar
-        /// Aprueba una operación pendiente
-        /// </summary>
         [HttpPut("operaciones/{operacionId}/aprobar")]
         public async Task<IActionResult> AprobarOperacion(int operacionId)
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
                 var operacion = await _transferenciasServicio.ObtenerTransaccionAsync(operacionId);
                 if (operacion == null)
-                    return NotFound(new { success = false, message = "Operación no encontrada." });
+                    return NotFound(ApiResponse.Fail("Operación no encontrada"));
 
                 var cliente = await _clienteServicio.ObtenerClienteAsync(operacion.ClienteId);
                 if (cliente == null || cliente.GestorAsignadoId != gestorId)
-                    return Forbid();
+                    return StatusCode(403, ApiResponse.Fail("No puede aprobar operaciones fuera de su cartera"));
 
                 if (operacion.Estado != "PendienteAprobacion")
-                    return BadRequest(new { success = false, message = "La operación no está pendiente de aprobación." });
+                    return BadRequest(ApiResponse.Fail("La operación no está pendiente de aprobación"));
 
-                var operacionAprobada = await _transferenciasServicio.AprobarTransaccionAsync(operacionId, gestorId);
+                var validacion = TransferenciasReglas.ValidarAprobacionGestor(operacion.Monto);
+                if (!validacion.EsValido)
+                    return BadRequest(ApiResponse.Fail(validacion.Error!));
+
+                var aprobada = await _transferenciasServicio.AprobarTransaccionAsync(operacionId, gestorId);
 
                 await _auditoriaServicio.RegistrarAsync(gestorId, "AprobacionOperacion",
-                    $"Gestor aprobó operación {operacionId} por {operacion.Moneda} {operacion.Monto}");
+                    $"Operación {operacionId} aprobada por {operacion.Moneda} {operacion.Monto}");
 
-                return Ok(new
-                {
-                    success = true,
-                    message = "Operación aprobada exitosamente.",
-                    data = new 
-                    { 
-                        id = operacionAprobada.Id, 
-                        estado = operacionAprobada.Estado, 
-                        fechaEjecucion = operacionAprobada.FechaEjecucion 
-                    }
-                });
+                return Ok(ApiResponse<OperacionResultadoDto>.Ok(
+                    new OperacionResultadoDto(aprobada.Id, aprobada.Estado, aprobada.FechaEjecucion),
+                    "Operación aprobada exitosamente"));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error aprobando operación: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error aprobando operación {Id}", operacionId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// PUT: api/gestor/operaciones/{operacionId}/rechazar
-        /// Rechaza una operación pendiente
-        /// </summary>
         [HttpPut("operaciones/{operacionId}/rechazar")]
         public async Task<IActionResult> RechazarOperacion(int operacionId, [FromBody] RechazarOperacionRequest request)
         {
             try
             {
-                var gestorId = GetGestorIdFromToken();
+                var gestorId = GetGestorId();
                 if (gestorId == 0)
-                    return Unauthorized(new { success = false, message = "Gestor no identificado." });
+                    return Unauthorized(ApiResponse.Fail("Gestor no identificado"));
 
                 if (string.IsNullOrWhiteSpace(request.Razon) || request.Razon.Trim().Length < 10)
-                    return BadRequest(new { success = false, message = "El motivo debe tener al menos 10 caracteres." });
+                    return BadRequest(ApiResponse.Fail("El motivo debe tener al menos 10 caracteres"));
 
                 var operacion = await _transferenciasServicio.ObtenerTransaccionAsync(operacionId);
                 if (operacion == null)
-                    return NotFound(new { success = false, message = "Operación no encontrada." });
+                    return NotFound(ApiResponse.Fail("Operación no encontrada"));
 
                 var cliente = await _clienteServicio.ObtenerClienteAsync(operacion.ClienteId);
                 if (cliente == null || cliente.GestorAsignadoId != gestorId)
-                    return Forbid();
+                    return StatusCode(403, ApiResponse.Fail("No puede rechazar operaciones fuera de su cartera"));
 
                 if (operacion.Estado != "PendienteAprobacion")
-                    return BadRequest(new { success = false, message = "La operación no está pendiente de aprobación." });
+                    return BadRequest(ApiResponse.Fail("La operación no está pendiente de aprobación"));
 
-                var operacionRechazada = await _transferenciasServicio.RechazarTransaccionAsync(operacionId, gestorId, request.Razon);
+                var rechazada = await _transferenciasServicio.RechazarTransaccionAsync(operacionId, gestorId, request.Razon);
 
                 await _auditoriaServicio.RegistrarAsync(gestorId, "RechazoOperacion",
-                    $"Gestor rechazó operación {operacionId}. Razón: {request.Razon}");
+                    $"Operación {operacionId} rechazada. Razón: {request.Razon}");
 
-                return Ok(new
-                {
-                    success = true,
-                    message = "Operación rechazada.",
-                    data = new 
-                    { 
-                        id = operacionRechazada.Id, 
-                        estado = operacionRechazada.Estado 
-                    }
-                });
+                return Ok(ApiResponse<OperacionResultadoDto>.Ok(
+                    new OperacionResultadoDto(rechazada.Id, rechazada.Estado, null),
+                    "Operación rechazada"));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error rechazando operación: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error rechazando operación {Id}", operacionId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
         #endregion
+
+        #region Helpers
+
+        private int GetGestorId()
+        {
+            var claim = User.FindFirst("sub")?.Value ??
+                        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(claim, out var id) ? id : 0;
+        }
+
+        #endregion
     }
-
-    #region ========== DTOs ==========
-
-    /// <summary>
-    /// DTO para crear cuenta desde gestor
-    /// </summary>
-    public class CrearCuentaGestorRequest
-    {
-        public string Tipo { get; set; } = string.Empty;
-        public string Moneda { get; set; } = string.Empty;
-        public decimal SaldoInicial { get; set; } = 0;
-    }
-
-    /// <summary>
-    /// DTO para rechazar operación
-    /// </summary>
-    public class RechazarOperacionRequest
-    {
-        public string Razon { get; set; } = string.Empty;
-    }
-
-    #endregion
 }

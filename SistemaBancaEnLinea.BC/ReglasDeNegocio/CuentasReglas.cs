@@ -61,6 +61,24 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
             return (true, null);
         }
 
+        /// <summary>
+        /// Valida si un cliente puede abrir otra cuenta del mismo tipo y moneda
+        /// Restricción: No puede abrir más de 3 cuentas del mismo tipo y moneda
+        /// </summary>
+        public static (bool EsValido, string? Error) ValidarMaximoCuentasMismoTipoMoneda(
+            IEnumerable<Cuenta> cuentasExistentes, string tipo, string moneda)
+        {
+            var cuentasMismoTipoMoneda = cuentasExistentes
+                .Count(c => c.Tipo.Equals(tipo, StringComparison.OrdinalIgnoreCase) 
+                         && c.Moneda.Equals(moneda, StringComparison.OrdinalIgnoreCase)
+                         && c.Estado != "Cerrada" && c.Estado != "Inactiva");
+
+            if (cuentasMismoTipoMoneda >= MAXIMO_CUENTAS_MISMO_TIPO_MONEDA)
+                return (false, $"El cliente ya tiene el máximo de {MAXIMO_CUENTAS_MISMO_TIPO_MONEDA} cuentas de tipo {tipo} en {moneda}.");
+
+            return (true, null);
+        }
+
         // ==================== MAPEOS ====================
 
         public static CuentaListaDto MapearAListaDto(Cuenta cuenta) =>

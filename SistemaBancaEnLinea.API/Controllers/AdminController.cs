@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.BC.Modelos.DTOs;
+using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
@@ -26,103 +28,71 @@ namespace SistemaBancaEnLinea.API.Controllers
             _logger = logger;
         }
 
-        /// <summary>
-        /// RF-A2: Desbloquear usuario (solo administradores)
-        /// </summary>
         [HttpPut("usuarios/{usuarioId}/desbloquear")]
         public async Task<IActionResult> DesbloquearUsuario(int usuarioId)
         {
             try
             {
-                var adminId = GetCurrentUserId();
-                var resultado = await _usuarioServicio.ToggleBloqueoUsuarioAsync(usuarioId, adminId);
-                
-                if (!resultado.Exitoso)
-                    return BadRequest(new { success = false, message = resultado.Error });
+                var resultado = await _usuarioServicio.ToggleBloqueoUsuarioAsync(usuarioId, GetCurrentUserId());
 
-                return Ok(new { success = true, message = "Usuario desbloqueado exitosamente." });
+                if (!resultado.Exitoso)
+                    return BadRequest(ApiResponse.Fail(resultado.Error!));
+
+                return Ok(ApiResponse.Ok("Usuario desbloqueado exitosamente"));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error desbloqueando usuario: {ex.Message}");
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error desbloqueando usuario {Id}", usuarioId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
-        
-        /// <summary>
-        /// Obtener todos los usuarios
-        /// </summary>
+
         [HttpGet("usuarios")]
         public async Task<IActionResult> ObtenerUsuarios()
         {
             try
             {
                 var usuarios = await _usuarioServicio.ObtenerTodosAsync();
-                return Ok(new
-                {
-                    success = true,
-                    data = usuarios?.Select(u => new
-                    {
-                        id = u.Id,
-                        email = u.Email,
-                        role = u.Rol,
-                        nombre = u.Nombre ?? u.Email,
-                        identificacion = u.Identificacion,
-                        telefono = u.Telefono,
-                        bloqueado = u.EstaBloqueado,
-                        intentosFallidos = u.IntentosFallidos
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<UsuarioListaDto>>.Ok(
+                    UsuarioReglas.MapearAListaDto(usuarios)));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo usuarios");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// RF-E1: Crear proveedor de servicio (solo administradores)
-        /// </summary>
         [HttpPost("proveedores")]
         public async Task<IActionResult> CrearProveedor([FromBody] CrearProveedorRequest request)
         {
             try
             {
-                var adminId = GetCurrentUserId();
-                var proveedor = new SistemaBancaEnLinea.BC.Modelos.ProveedorServicio
+                var proveedor = new BC.Modelos.ProveedorServicio
                 {
                     Nombre = request.Nombre,
                     ReglaValidacionContrato = request.ReglaValidacionContrato,
-                    CreadoPorUsuarioId = adminId
+                    CreadoPorUsuarioId = GetCurrentUserId()
                 };
 
-                var proveedorCreado = await _proveedorServicio.CrearAsync(proveedor);
+                var creado = await _proveedorServicio.CrearAsync(proveedor);
 
-                return CreatedAtAction(nameof(ObtenerProveedor), new { id = proveedorCreado.Id }, new
-                {
-                    success = true,
-                    message = "Proveedor creado exitosamente.",
-                    data = new
-                    {
-                        id = proveedorCreado.Id,
-                        nombre = proveedorCreado.Nombre,
-                        reglaValidacion = proveedorCreado.ReglaValidacionContrato
-                    }
-                });
+                return CreatedAtAction(nameof(ObtenerProveedor), new { id = creado.Id },
+                    ApiResponse<ProveedorDto>.Ok(
+                        new ProveedorDto(creado.Id, creado.Nombre, creado.ReglaValidacionContrato),
+                        "Proveedor creado exitosamente"));
             }
             catch (InvalidOperationException ex)
             {
-                return BadRequest(new { success = false, message = ex.Message });
+                return BadRequest(ApiResponse.Fail(ex.Message));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error creando proveedor");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Obtener proveedor por ID
-        /// </summary>
         [HttpGet("proveedores/{id}")]
         public async Task<IActionResult> ObtenerProveedor(int id)
         {
@@ -130,54 +100,34 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var proveedor = await _proveedorServicio.ObtenerPorIdAsync(id);
                 if (proveedor == null)
-                    return NotFound(new { success = false, message = "Proveedor no encontrado." });
+                    return NotFound(ApiResponse.Fail("Proveedor no encontrado"));
 
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        id = proveedor.Id,
-                        nombre = proveedor.Nombre,
-                        reglaValidacion = proveedor.ReglaValidacionContrato
-                    }
-                });
+                return Ok(ApiResponse<ProveedorDto>.Ok(
+                    new ProveedorDto(proveedor.Id, proveedor.Nombre, proveedor.ReglaValidacionContrato)));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo proveedor {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Obtener todos los proveedores
-        /// </summary>
         [HttpGet("proveedores")]
         public async Task<IActionResult> ObtenerProveedores()
         {
             try
             {
                 var proveedores = await _proveedorServicio.ObtenerTodosAsync();
-                return Ok(new
-                {
-                    success = true,
-                    data = proveedores.Select(p => new
-                    {
-                        id = p.Id,
-                        nombre = p.Nombre,
-                        reglaValidacion = p.ReglaValidacionContrato
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<ProveedorDto>>.Ok(
+                    proveedores.Select(p => new ProveedorDto(p.Id, p.Nombre, p.ReglaValidacionContrato))));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo proveedores");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Eliminar proveedor
-        /// </summary>
         [HttpDelete("proveedores/{id}")]
         public async Task<IActionResult> EliminarProveedor(int id)
         {
@@ -185,20 +135,17 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var resultado = await _proveedorServicio.EliminarAsync(id);
                 if (!resultado)
-                    return NotFound(new { success = false, message = "Proveedor no encontrado." });
+                    return NotFound(ApiResponse.Fail("Proveedor no encontrado"));
 
-                return Ok(new { success = true, message = "Proveedor eliminado exitosamente." });
+                return Ok(ApiResponse.Ok("Proveedor eliminado exitosamente"));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error eliminando proveedor {Id}", id);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// RF-G2: Obtener registros de auditoría
-        /// Restricción: No puede ver auditoría de otros administradores
-        /// </summary>
         [HttpGet("auditoria")]
         public async Task<IActionResult> ObtenerAuditoria(
             [FromQuery] DateTime? fechaInicio,
@@ -212,89 +159,62 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var currentAdminId = GetCurrentUserId();
 
                 var registros = await _auditoriaServicio.ObtenerPorFechasAsync(inicio, fin, tipoOperacion);
-                
-                // Obtener IDs de otros administradores
+
                 var otrosAdmins = await _usuarioServicio.ObtenerPorRolAsync("Administrador");
                 var otrosAdminIds = otrosAdmins
                     .Where(a => a.Id != currentAdminId)
                     .Select(a => a.Id)
                     .ToHashSet();
-                
-                // Filtrar registros de otros administradores (solo ve los propios y los de no-admins)
-                registros = registros
+
+                var registrosFiltrados = registros
                     .Where(r => !otrosAdminIds.Contains(r.UsuarioId))
+                    .Select(r => new AuditoriaDto(
+                        r.Id, r.FechaHora, r.TipoOperacion, r.Descripcion,
+                        r.UsuarioId, r.Usuario?.Email, r.DetalleJson))
                     .ToList();
 
-                return Ok(new
-                {
-                    success = true,
-                    data = registros.Select(r => new
-                    {
-                        id = r.Id,
-                        fechaHora = r.FechaHora,
-                        tipoOperacion = r.TipoOperacion,
-                        descripcion = r.Descripcion,
-                        usuarioId = r.UsuarioId,
-                        usuarioEmail = r.Usuario?.Email,
-                        detalleJson = r.DetalleJson
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<AuditoriaDto>>.Ok(registrosFiltrados));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo auditoría");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
-        /// <summary>
-        /// Obtener registros de auditoría por usuario
-        /// Restricción: No puede ver auditoría de otros administradores
-        /// </summary>
         [HttpGet("auditoria/usuario/{usuarioId}")]
         public async Task<IActionResult> ObtenerAuditoriaUsuario(int usuarioId)
         {
             try
             {
                 var currentAdminId = GetCurrentUserId();
-                
-                // Verificar si el usuario solicitado es otro administrador
-                var usuarios = await _usuarioServicio.ObtenerPorRolAsync("Administrador");
-                var esOtroAdmin = usuarios.Any(u => u.Id == usuarioId && u.Id != currentAdminId);
-                
-                if (esOtroAdmin)
-                    return StatusCode(403, new { success = false, message = "No puede acceder a reportes de otros administradores." });
+
+                var admins = await _usuarioServicio.ObtenerPorRolAsync("Administrador");
+                if (admins.Any(u => u.Id == usuarioId && u.Id != currentAdminId))
+                    return StatusCode(403, ApiResponse.Fail("No puede acceder a reportes de otros administradores"));
 
                 var registros = await _auditoriaServicio.ObtenerPorUsuarioAsync(usuarioId);
 
-                return Ok(new
-                {
-                    success = true,
-                    data = registros.Select(r => new
-                    {
-                        id = r.Id,
-                        fechaHora = r.FechaHora,
-                        tipoOperacion = r.TipoOperacion,
-                        descripcion = r.Descripcion
-                    })
-                });
+                return Ok(ApiResponse<IEnumerable<AuditoriaResumenDto>>.Ok(
+                    registros.Select(r => new AuditoriaResumenDto(
+                        r.Id, r.FechaHora, r.TipoOperacion, r.Descripcion))));
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { success = false, message = ex.Message });
+                _logger.LogError(ex, "Error obteniendo auditoría de usuario {Id}", usuarioId);
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
 
+        #region Helpers
+
         private int GetCurrentUserId()
         {
-            var userIdClaim = User.FindFirst("sub")?.Value ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-            return int.TryParse(userIdClaim, out var userId) ? userId : 0;
+            var claim = User.FindFirst("sub")?.Value ??
+                        User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(claim, out var userId) ? userId : 0;
         }
-    }
 
-    public class CrearProveedorRequest
-    {
-        public string Nombre { get; set; } = string.Empty;
-        public string ReglaValidacionContrato { get; set; } = string.Empty;
-        public int UsuarioAdminId { get; set; }
+        #endregion
     }
 }

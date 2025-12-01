@@ -15,6 +15,9 @@
         
         // Límite de autorización para administradores
         public const decimal LIMITE_AUTORIZACION_ADMIN = 10000000; // 10 millones máximo que un admin puede aprobar
+        
+        // Límite de autorización para gestores (menor que admin)
+        public const decimal LIMITE_AUTORIZACION_GESTOR = 5000000; // 5 millones máximo que un gestor puede aprobar
 
         // RF-D4: Estados de transacción
         public static readonly string[] ESTADOS_TRANSACCION =
@@ -77,6 +80,14 @@
         }
 
         /// <summary>
+        /// Valida si el monto excede el límite de autorización del gestor
+        /// </summary>
+        public static bool ExcedeLimiteAutorizacionGestor(decimal monto)
+        {
+            return monto > LIMITE_AUTORIZACION_GESTOR;
+        }
+
+        /// <summary>
         /// Valida si una transacción puede ser aprobada por un administrador
         /// </summary>
         public static (bool EsValido, string? Error) ValidarAprobacionAdmin(decimal monto, bool tieneValidacionPrevia)
@@ -86,6 +97,17 @@
             
             if (!tieneValidacionPrevia)
                 return (false, "La operación requiere validación previa del cliente o gestor.");
+            
+            return (true, null);
+        }
+
+        /// <summary>
+        /// Valida si una transacción puede ser aprobada por un gestor
+        /// </summary>
+        public static (bool EsValido, string? Error) ValidarAprobacionGestor(decimal monto)
+        {
+            if (ExcedeLimiteAutorizacionGestor(monto))
+                return (false, $"El monto excede el límite de autorización del gestor ({LIMITE_AUTORIZACION_GESTOR:N0}). Requiere aprobación de un administrador.");
             
             return (true, null);
         }

@@ -125,7 +125,12 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
+        /// <summary>
+        /// Bloquea/desbloquea una cuenta
+        /// Restricción: Gestor NO puede bloquear ni cerrar cuentas
+        /// </summary>
         [HttpPut("{id}/block")]
+        [Authorize(Roles = "Administrador,Cliente")]
         public async Task<IActionResult> BlockAccount(int id)
         {
             try
@@ -164,7 +169,12 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
+        /// <summary>
+        /// Cierra una cuenta
+        /// Restricción: Gestor NO puede bloquear ni cerrar cuentas
+        /// </summary>
         [HttpPut("{id}/close")]
+        [Authorize(Roles = "Administrador,Cliente")]
         public async Task<IActionResult> CloseAccount(int id)
         {
             try
