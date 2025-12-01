@@ -14,17 +14,20 @@ namespace SistemaBancaEnLinea.API.Controllers
     public class BeneficiariosController : ControllerBase
     {
         private readonly IBeneficiarioServicio _beneficiarioServicio;
+        private readonly IClienteServicio _clienteServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
         private readonly IMapper _mapper;
         private readonly ILogger<BeneficiariosController> _logger;
 
         public BeneficiariosController(
             IBeneficiarioServicio beneficiarioServicio,
+            IClienteServicio clienteServicio,
             IAuditoriaServicio auditoriaServicio,
             IMapper mapper,
             ILogger<BeneficiariosController> logger)
         {
             _beneficiarioServicio = beneficiarioServicio;
+            _clienteServicio = clienteServicio;
             _auditoriaServicio = auditoriaServicio;
             _mapper = mapper;
             _logger = logger;
@@ -35,7 +38,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
@@ -72,7 +75,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (beneficiario == null)
                     return NotFound(ApiResponse.Fail("Beneficiario no encontrado."));
 
-                if (!PuedoAccederBeneficiario(beneficiario.ClienteId))
+                if (!await PuedoAccederBeneficiarioAsync(beneficiario.ClienteId))
                     return Forbid();
 
                 var tieneOperaciones = await _beneficiarioServicio.TieneOperacionesPendientesAsync(id);
@@ -97,7 +100,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (beneficiarioExistente == null)
                     return NotFound(ApiResponse.Fail("Beneficiario no encontrado."));
 
-                if (!PuedoAccederBeneficiario(beneficiarioExistente.ClienteId))
+                if (!await PuedoAccederBeneficiarioAsync(beneficiarioExistente.ClienteId))
                     return Forbid();
 
                 var beneficiario = await _beneficiarioServicio.ConfirmarBeneficiarioAsync(id);
@@ -125,7 +128,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
@@ -168,7 +171,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (beneficiarioExistente == null)
                     return NotFound(ApiResponse.Fail("Beneficiario no encontrado."));
 
-                if (!PuedoAccederBeneficiario(beneficiarioExistente.ClienteId))
+                if (!await PuedoAccederBeneficiarioAsync(beneficiarioExistente.ClienteId))
                     return Forbid();
 
                 var beneficiario = await _beneficiarioServicio.ActualizarBeneficiarioAsync(id, request.NuevoAlias);
@@ -200,7 +203,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (beneficiarioExistente == null)
                     return NotFound(ApiResponse.Fail("Beneficiario no encontrado."));
 
-                if (!PuedoAccederBeneficiario(beneficiarioExistente.ClienteId))
+                if (!await PuedoAccederBeneficiarioAsync(beneficiarioExistente.ClienteId))
                     return Forbid();
 
                 await _beneficiarioServicio.EliminarBeneficiarioAsync(id);
@@ -223,10 +226,13 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         #region Métodos Privados
 
-        private int GetClienteId()
+        private async Task<int> GetClienteIdAsync()
         {
-            var claim = User.FindFirst("client_id")?.Value;
-            return int.TryParse(claim, out var id) ? id : 0;
+            var usuarioId = GetUsuarioId();
+            if (usuarioId == 0) return 0;
+            
+            var cliente = await _clienteServicio.ObtenerPorUsuarioAsync(usuarioId);
+            return cliente?.Id ?? 0;
         }
 
         private int GetUsuarioId()
@@ -241,13 +247,13 @@ namespace SistemaBancaEnLinea.API.Controllers
             ?? User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value 
             ?? "Cliente";
 
-        private bool PuedoAccederBeneficiario(int beneficiarioClienteId)
+        private async Task<bool> PuedoAccederBeneficiarioAsync(int beneficiarioClienteId)
         {
             var role = GetUserRole();
             if (role is "Administrador" or "Gestor")
                 return true;
 
-            var clienteId = GetClienteId();
+            var clienteId = await GetClienteIdAsync();
             return clienteId > 0 && clienteId == beneficiarioClienteId;
         }
 

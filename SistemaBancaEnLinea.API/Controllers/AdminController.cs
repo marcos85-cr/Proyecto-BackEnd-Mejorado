@@ -12,6 +12,9 @@ namespace SistemaBancaEnLinea.API.Controllers
     public class AdminController : ControllerBase
     {
         private readonly IUsuarioServicio _usuarioServicio;
+        private readonly IClienteServicio _clienteServicio;
+        private readonly ICuentaServicio _cuentaServicio;
+        private readonly ITransferenciasServicio _transferenciasServicio;
         private readonly IProveedorServicioServicio _proveedorServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
         private readonly IMapper _mapper;
@@ -19,17 +22,78 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         public AdminController(
             IUsuarioServicio usuarioServicio,
+            IClienteServicio clienteServicio,
+            ICuentaServicio cuentaServicio,
+            ITransferenciasServicio transferenciasServicio,
             IProveedorServicioServicio proveedorServicio,
             IAuditoriaServicio auditoriaServicio,
             IMapper mapper,
             ILogger<AdminController> logger)
         {
             _usuarioServicio = usuarioServicio;
+            _clienteServicio = clienteServicio;
+            _cuentaServicio = cuentaServicio;
+            _transferenciasServicio = transferenciasServicio;
             _proveedorServicio = proveedorServicio;
             _auditoriaServicio = auditoriaServicio;
             _mapper = mapper;
             _logger = logger;
         }
+
+        #region Dashboard
+
+        [HttpGet("dashboard/stats")]
+        public async Task<IActionResult> GetDashboardStats()
+        {
+            try
+            {
+                // Usuarios
+                var usuarios = await _usuarioServicio.ObtenerTodosAsync();
+                var totalUsuarios = usuarios.Count;
+                var usuariosActivos = usuarios.Count(u => !u.EstaBloqueado);
+                var usuariosBloqueados = usuarios.Count(u => u.EstaBloqueado);
+
+                // Clientes
+                var clientes = await _clienteServicio.ObtenerTodosAsync();
+                var totalClientes = clientes.Count;
+                var clienteIds = clientes.Select(c => c.Id).ToList();
+
+                // Cuentas
+                var cuentas = await _cuentaServicio.ObtenerTodasConRelacionesAsync();
+                var totalCuentas = cuentas.Count;
+                var cuentasActivas = cuentas.Count(c => c.Estado == "Activa");
+                var volumenTotal = cuentas.Where(c => c.Estado == "Activa").Sum(c => c.Saldo);
+
+                // Proveedores
+                var proveedores = await _proveedorServicio.ObtenerTodosAsync();
+                var totalProveedores = proveedores.Count;
+
+                // Operaciones de hoy (todas las de todos los clientes)
+                var operacionesHoy = clienteIds.Count > 0 
+                    ? await _transferenciasServicio.ObtenerOperacionesDeHoyPorClientesAsync(clienteIds)
+                    : new List<BC.Modelos.Transaccion>();
+
+                return Ok(ApiResponse<AdminDashboardDto>.Ok(new AdminDashboardDto(
+                    totalUsuarios,
+                    usuariosActivos,
+                    usuariosBloqueados,
+                    totalClientes,
+                    totalCuentas,
+                    cuentasActivas,
+                    totalProveedores,
+                    operacionesHoy.Count,
+                    volumenTotal)));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo stats del dashboard admin");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+            }
+        }
+
+        #endregion
+
+        #region Usuarios
 
         [HttpPut("usuarios/{usuarioId}/desbloquear")]
         public async Task<IActionResult> DesbloquearUsuario(int usuarioId)
@@ -242,6 +306,8 @@ namespace SistemaBancaEnLinea.API.Controllers
                 return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }
+
+        #endregion
 
         #region Helpers
 

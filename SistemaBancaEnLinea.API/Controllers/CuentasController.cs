@@ -14,17 +14,20 @@ namespace SistemaBancaEnLinea.API.Controllers
     public class CuentasController : ControllerBase
     {
         private readonly ICuentaServicio _cuentaServicio;
+        private readonly IClienteServicio _clienteServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
         private readonly IMapper _mapper;
         private readonly ILogger<CuentasController> _logger;
 
         public CuentasController(
             ICuentaServicio cuentaServicio,
+            IClienteServicio clienteServicio,
             IAuditoriaServicio auditoriaServicio,
             IMapper mapper,
             ILogger<CuentasController> logger)
         {
             _cuentaServicio = cuentaServicio;
+            _clienteServicio = clienteServicio;
             _auditoriaServicio = auditoriaServicio;
             _mapper = mapper;
             _logger = logger;
@@ -35,7 +38,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == null)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado"));
 
@@ -78,7 +81,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cuenta == null)
                     return NotFound(ApiResponse.Fail("Cuenta no encontrada"));
 
-                if (!PuedoAccederCuenta(cuenta.ClienteId))
+                if (!await PuedoAccederCuentaAsync(cuenta.ClienteId))
                     return Forbid();
 
                 return Ok(ApiResponse<CuentaCompletaDto>.Ok(
@@ -96,7 +99,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == null)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado"));
 
@@ -212,7 +215,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cuenta == null)
                     return NotFound(ApiResponse.Fail("Cuenta no encontrada"));
 
-                if (!PuedoAccederCuenta(cuenta.ClienteId))
+                if (!await PuedoAccederCuentaAsync(cuenta.ClienteId))
                     return Forbid();
 
                 return Ok(ApiResponse<CuentaBalanceDto>.Ok(
@@ -258,15 +261,18 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
-        private int? GetClienteId()
+        private async Task<int?> GetClienteIdAsync()
         {
-            var claim = User.FindFirst("client_id")?.Value;
-            return int.TryParse(claim, out var id) ? id : null;
+            var usuarioId = GetUsuarioId();
+            if (usuarioId == 0) return null;
+            
+            var cliente = await _clienteServicio.ObtenerPorUsuarioAsync(usuarioId);
+            return cliente?.Id;
         }
 
         private int GetUsuarioId()
         {
-            var claim = User.FindFirst("user_id")?.Value 
+            var claim = User.FindFirst("sub")?.Value 
                      ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             return int.TryParse(claim, out var id) ? id : 0;
         }
@@ -278,20 +284,20 @@ namespace SistemaBancaEnLinea.API.Controllers
                 ?? "Cliente";
         }
 
-        private bool PuedoAccederCuenta(int cuentaClienteId)
+        private async Task<bool> PuedoAccederCuentaAsync(int cuentaClienteId)
         {
             var role = GetUserRole();
             if (role is "Administrador" or "Gestor")
                 return true;
 
-            var clienteId = GetClienteId();
+            var clienteId = await GetClienteIdAsync();
             return clienteId.HasValue && clienteId.Value == cuentaClienteId;
         }
 
         private async Task<(bool Permitido, string? Error)> PuedoModificarCuentaAsync(Cuenta cuenta)
         {
             var role = GetUserRole();
-            var clienteId = GetClienteId();
+            var clienteId = await GetClienteIdAsync();
 
             if (role == "Cliente")
             {

@@ -172,11 +172,20 @@ namespace SistemaBancaEnLinea.BW
 
         public async Task<Cliente?> ObtenerPorUsuarioAsync(int usuarioId)
         {
+            // Primero buscar el usuario para obtener su ClienteId
+            var usuario = await _context.Usuarios
+                .FirstOrDefaultAsync(u => u.Id == usuarioId);
+            
+            if (usuario == null || !usuario.ClienteId.HasValue)
+                return null;
+            
+            // Luego obtener el cliente con todas sus relaciones
             return await _context.Clientes
                 .Include(c => c.Cuentas)
                 .Include(c => c.Beneficiarios)
                 .Include(c => c.GestorAsignado)
-                .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuarioId);
+                .Include(c => c.UsuarioAsociado)
+                .FirstOrDefaultAsync(c => c.Id == usuario.ClienteId.Value);
         }
 
         public async Task<Cliente?> ObtenerPorIdentificacionAsync(string identificacion)

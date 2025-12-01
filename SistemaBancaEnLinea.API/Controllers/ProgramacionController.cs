@@ -12,15 +12,18 @@ namespace SistemaBancaEnLinea.API.Controllers
     public class ProgramacionController : ControllerBase
     {
         private readonly IProgramacionServicio _programacionServicio;
+        private readonly IClienteServicio _clienteServicio;
         private readonly IMapper _mapper;
         private readonly ILogger<ProgramacionController> _logger;
 
         public ProgramacionController(
             IProgramacionServicio programacionServicio,
+            IClienteServicio clienteServicio,
             IMapper mapper,
             ILogger<ProgramacionController> logger)
         {
             _programacionServicio = programacionServicio;
+            _clienteServicio = clienteServicio;
             _mapper = mapper;
             _logger = logger;
         }
@@ -30,7 +33,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
@@ -73,7 +76,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (programacion == null)
                     return NotFound(ApiResponse.Fail("Programación no encontrada."));
 
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 var role = GetUserRole();
 
                 // Validar acceso
@@ -99,7 +102,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (programacion == null)
                     return NotFound(ApiResponse.Fail("Programación no encontrada."));
 
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 var role = GetUserRole();
 
                 if (role == "Cliente" && programacion.Transaccion?.ClienteId != clienteId)
@@ -122,9 +125,19 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         #region Métodos Privados
 
-        private int GetClienteId()
+        private async Task<int> GetClienteIdAsync()
         {
-            var claim = User.FindFirst("client_id")?.Value;
+            var usuarioId = GetUsuarioId();
+            if (usuarioId == 0) return 0;
+            
+            var cliente = await _clienteServicio.ObtenerPorUsuarioAsync(usuarioId);
+            return cliente?.Id ?? 0;
+        }
+
+        private int GetUsuarioId()
+        {
+            var claim = User.FindFirst("sub")?.Value 
+                     ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             return int.TryParse(claim, out var id) ? id : 0;
         }
 

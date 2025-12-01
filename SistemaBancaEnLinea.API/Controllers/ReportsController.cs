@@ -44,7 +44,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cuenta == null)
                     return NotFound(ApiResponse.Fail("Cuenta no encontrada."));
 
-                var clienteId = GetClienteIdFromToken();
+                var clienteId = await GetClienteIdFromTokenAsync();
                 var userRole = GetUserRole();
 
                 // RF-F1: Cliente solo puede ver sus propias cuentas
@@ -86,7 +86,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteIdFromToken();
+                var clienteId = await GetClienteIdFromTokenAsync();
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
@@ -259,10 +259,13 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         #region Helpers
 
-        private int GetClienteIdFromToken()
+        private async Task<int> GetClienteIdFromTokenAsync()
         {
-            var clienteIdClaim = User.FindFirst("client_id")?.Value;
-            return int.TryParse(clienteIdClaim, out var clienteId) ? clienteId : 0;
+            var usuarioId = GetCurrentUserId();
+            if (usuarioId == 0) return 0;
+            
+            var cliente = await _clienteServicio.ObtenerPorUsuarioAsync(usuarioId);
+            return cliente?.Id ?? 0;
         }
 
         private int GetCurrentUserId()

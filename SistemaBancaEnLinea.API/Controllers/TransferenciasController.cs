@@ -11,13 +11,16 @@ namespace SistemaBancaEnLinea.API.Controllers
     public class TransferenciasController : ControllerBase
     {
         private readonly ITransferenciasServicio _transferenciasServicio;
+        private readonly IClienteServicio _clienteServicio;
         private readonly ILogger<TransferenciasController> _logger;
 
         public TransferenciasController(
             ITransferenciasServicio transferenciasServicio,
+            IClienteServicio clienteServicio,
             ILogger<TransferenciasController> logger)
         {
             _transferenciasServicio = transferenciasServicio;
+            _clienteServicio = clienteServicio;
             _logger = logger;
         }
 
@@ -69,7 +72,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (string.IsNullOrWhiteSpace(idempotencyKey))
                     return BadRequest(ApiResponse<object>.Fail("La cabecera Idempotency-Key es requerida."));
 
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse<object>.Fail("Cliente no identificado."));
 
@@ -157,7 +160,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse<object>.Fail("Cliente no identificado."));
 
@@ -268,10 +271,13 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         #region Helpers
 
-        private int GetClienteId()
+        private async Task<int> GetClienteIdAsync()
         {
-            var claim = User.FindFirst("client_id")?.Value;
-            return int.TryParse(claim, out var id) ? id : 0;
+            var usuarioId = GetUsuarioId();
+            if (usuarioId == 0) return 0;
+            
+            var cliente = await _clienteServicio.ObtenerPorUsuarioAsync(usuarioId);
+            return cliente?.Id ?? 0;
         }
 
         private int GetUsuarioId()

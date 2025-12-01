@@ -14,17 +14,20 @@ namespace SistemaBancaEnLinea.API.Controllers
     public class PagosServiciosController : ControllerBase
     {
         private readonly IPagosServiciosServicio _pagosServicio;
+        private readonly IClienteServicio _clienteServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
         private readonly IMapper _mapper;
         private readonly ILogger<PagosServiciosController> _logger;
 
         public PagosServiciosController(
             IPagosServiciosServicio pagosServicio,
+            IClienteServicio clienteServicio,
             IAuditoriaServicio auditoriaServicio,
             IMapper mapper,
             ILogger<PagosServiciosController> logger)
         {
             _pagosServicio = pagosServicio;
+            _clienteServicio = clienteServicio;
             _auditoriaServicio = auditoriaServicio;
             _mapper = mapper;
             _logger = logger;
@@ -79,7 +82,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
@@ -123,7 +126,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
@@ -172,7 +175,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
@@ -197,7 +200,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = GetClienteId();
+                var clienteId = await GetClienteIdAsync();
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
@@ -233,10 +236,13 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         #region Métodos Privados
 
-        private int GetClienteId()
+        private async Task<int> GetClienteIdAsync()
         {
-            var claim = User.FindFirst("client_id")?.Value;
-            return int.TryParse(claim, out var id) ? id : 0;
+            var usuarioId = GetUsuarioId();
+            if (usuarioId == 0) return 0;
+            
+            var cliente = await _clienteServicio.ObtenerPorUsuarioAsync(usuarioId);
+            return cliente?.Id ?? 0;
         }
 
         private int GetUsuarioId()
