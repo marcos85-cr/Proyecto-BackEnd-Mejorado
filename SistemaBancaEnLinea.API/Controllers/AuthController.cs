@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
-using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
@@ -30,8 +29,9 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (!resultado.Exitoso)
                     return Unauthorized(ApiResponse.Fail(resultado.Error!));
 
-                var loginDto = UsuarioReglas.MapearALoginDto(resultado.Token!);
-                return Ok(ApiResponse<LoginDto>.Ok(loginDto, "Inicio de sesión exitoso"));
+                return Ok(ApiResponse<LoginDto>.Ok(
+                    new LoginDto(resultado.Token!), 
+                    "Inicio de sesión exitoso"));
             }
             catch (Exception ex)
             {
@@ -47,7 +47,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var existe = await _usuarioServicio.ExisteEmailAsync(request.Email);
                 return Ok(ApiResponse<EmailDisponibilidadDto>.Ok(
-                    UsuarioReglas.CrearEmailDisponibilidadDto(existe)));
+                    new EmailDisponibilidadDto(!existe)));
             }
             catch (Exception ex)
             {

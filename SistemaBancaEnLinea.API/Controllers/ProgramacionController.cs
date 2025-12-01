@@ -1,8 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AutoMapper;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
-using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
@@ -12,13 +12,16 @@ namespace SistemaBancaEnLinea.API.Controllers
     public class ProgramacionController : ControllerBase
     {
         private readonly IProgramacionServicio _programacionServicio;
+        private readonly IMapper _mapper;
         private readonly ILogger<ProgramacionController> _logger;
 
         public ProgramacionController(
             IProgramacionServicio programacionServicio,
+            IMapper mapper,
             ILogger<ProgramacionController> logger)
         {
             _programacionServicio = programacionServicio;
+            _mapper = mapper;
             _logger = logger;
         }
 
@@ -34,7 +37,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var programaciones = await _programacionServicio.ObtenerProgramacionesClienteAsync(clienteId);
 
                 return Ok(ApiResponse<IEnumerable<ProgramacionListaDto>>.Ok(
-                    ProgramacionReglas.MapearAListaDto(programaciones)));
+                    _mapper.Map<IEnumerable<ProgramacionListaDto>>(programaciones)));
             }
             catch (Exception ex)
             {
@@ -52,7 +55,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var programaciones = await _programacionServicio.ObtenerProgramacionesClienteAsync(clienteId);
 
                 return Ok(ApiResponse<IEnumerable<ProgramacionResumenDto>>.Ok(
-                    ProgramacionReglas.MapearAResumenDto(programaciones)));
+                    _mapper.Map<IEnumerable<ProgramacionResumenDto>>(programaciones)));
             }
             catch (Exception ex)
             {
@@ -78,7 +81,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     return Forbid();
 
                 return Ok(ApiResponse<ProgramacionDetalleDto>.Ok(
-                    ProgramacionReglas.MapearADetalleDto(programacion)));
+                    _mapper.Map<ProgramacionDetalleDto>(programacion)));
             }
             catch (Exception ex)
             {

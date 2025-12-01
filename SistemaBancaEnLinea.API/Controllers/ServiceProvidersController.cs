@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AutoMapper;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
@@ -14,15 +15,18 @@ namespace SistemaBancaEnLinea.API.Controllers
     {
         private readonly IProveedorServicioServicio _proveedorServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
+        private readonly IMapper _mapper;
         private readonly ILogger<ServiceProvidersController> _logger;
 
         public ServiceProvidersController(
             IProveedorServicioServicio proveedorServicio,
             IAuditoriaServicio auditoriaServicio,
+            IMapper mapper,
             ILogger<ServiceProvidersController> logger)
         {
             _proveedorServicio = proveedorServicio;
             _auditoriaServicio = auditoriaServicio;
+            _mapper = mapper;
             _logger = logger;
         }
 
@@ -34,7 +38,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var proveedores = await _proveedorServicio.ObtenerTodosAsync();
 
                 return Ok(ApiResponse<IEnumerable<ProveedorListaDto>>.Ok(
-                    ProveedorServicioReglas.MapearAListaDto(proveedores)));
+                    _mapper.Map<IEnumerable<ProveedorListaDto>>(proveedores)));
             }
             catch (Exception ex)
             {
@@ -53,7 +57,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     return NotFound(ApiResponse.Fail("Proveedor no encontrado."));
 
                 return Ok(ApiResponse<ProveedorDetalleDto>.Ok(
-                    ProveedorServicioReglas.MapearADetalleDto(proveedor)));
+                    _mapper.Map<ProveedorDetalleDto>(proveedor)));
             }
             catch (Exception ex)
             {
@@ -84,7 +88,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 return CreatedAtAction(nameof(GetProvider), new { id = proveedorCreado.Id },
                     ApiResponse<ProveedorCreacionDto>.Ok(
-                        ProveedorServicioReglas.MapearACreacionDto(proveedorCreado),
+                        _mapper.Map<ProveedorCreacionDto>(proveedorCreado),
                         "Proveedor creado exitosamente"));
             }
             catch (InvalidOperationException ex)
@@ -120,7 +124,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     GetCurrentUserId(), "ActualizacionProveedor", $"Proveedor {proveedor.Nombre} actualizado");
 
                 return Ok(ApiResponse<ProveedorCreacionDto>.Ok(
-                    ProveedorServicioReglas.MapearACreacionDto(proveedor),
+                    _mapper.Map<ProveedorCreacionDto>(proveedor),
                     "Proveedor actualizado exitosamente"));
             }
             catch (Exception ex)
@@ -164,12 +168,12 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var esValido = ProveedorServicioReglas.ValidarReferencia(
                     request.NumeroReferencia, proveedor.ReglaValidacionContrato);
 
-                // Simular datos de validación si es válido
                 var monto = esValido ? new Random().Next(5000, 50000) : (decimal?)null;
                 var nombre = esValido ? "Cliente de Ejemplo" : null;
 
                 return Ok(ApiResponse<ValidacionReferenciaDto>.Ok(
-                    ProveedorServicioReglas.CrearValidacionDto(esValido, monto, nombre)));
+                    new ValidacionReferenciaDto(esValido, monto, nombre,
+                        esValido ? "Referencia válida" : "Número de referencia no válido")));
             }
             catch (Exception ex)
             {

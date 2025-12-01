@@ -10,6 +10,7 @@ using SistemaBancaEnLinea.BW.CU;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.API.Middleware;
 using SistemaBancaEnLinea.API;
+using SistemaBancaEnLinea.BC.Mapping;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,7 +28,10 @@ builder.Services.AddDbContext<BancaContext>(options =>
     )
 );
 
-// 2. Configurar CORS
+// 2. Configurar AutoMapper
+builder.Services.AddAutoMapper(typeof(MappingProfile));
+
+// 3. Configurar CORS
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowAll", policy =>
@@ -38,7 +42,7 @@ builder.Services.AddCors(options =>
     });
 });
 
-// 3. Configurar JWT Authentication
+// 4. Configurar JWT Authentication
 var jwtKey = builder.Configuration["Jwt:Key"] ?? throw new InvalidOperationException("JWT Key no configurada");
 var key = Encoding.UTF8.GetBytes(jwtKey);
 
@@ -66,7 +70,7 @@ builder.Services.AddAuthentication(options =>
 
 builder.Services.AddAuthorization();
 
-// 4. Registrar Acciones (DA Layer)
+// 5. Registrar Acciones (DA Layer)
 builder.Services.AddScoped<UsuarioAcciones>();
 builder.Services.AddScoped<ClienteAcciones>();
 builder.Services.AddScoped<CuentaAcciones>();
@@ -76,7 +80,7 @@ builder.Services.AddScoped<ProgramacionAcciones>();
 builder.Services.AddScoped<ProveedorServicioAcciones>();
 builder.Services.AddScoped<AuditoriaAcciones>();
 
-// 5. Registrar Servicios (BW Layer)
+// 6. Registrar Servicios (BW Layer)
 builder.Services.AddScoped<IUsuarioServicio, UsuarioServicio>();
 builder.Services.AddScoped<IClienteServicio, ClienteServicio>();
 builder.Services.AddScoped<ICuentaServicio, CuentaServicio>();
@@ -88,15 +92,15 @@ builder.Services.AddScoped<IProveedorServicioServicio, ProveedorServicioServicio
 builder.Services.AddScoped<IAuditoriaServicio, AuditoriaServicio>();
 builder.Services.AddScoped<IReportesServicio, ReportesServicio>();
 
-// 6. Registrar Casos de Uso
+// 7. Registrar Casos de Uso
 builder.Services.AddScoped<GestionCuentasCU>();
 builder.Services.AddScoped<GestionUsuariosCU>();
 builder.Services.AddScoped<TransferenciasCU>();
 
-// 7. Registrar Background Service para programaciones
+// 8. Registrar Background Service para programaciones
 builder.Services.AddHostedService<ProgramacionBackgroundService>();
 
-// 8. Configurar Controllers
+// 9. Configurar Controllers
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -104,7 +108,7 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
 
-// 9. Configurar Swagger
+// 10. Configurar Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {

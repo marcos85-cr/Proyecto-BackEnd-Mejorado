@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AutoMapper;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
 using SistemaBancaEnLinea.BC.ReglasDeNegocio;
@@ -14,15 +15,18 @@ namespace SistemaBancaEnLinea.API.Controllers
     {
         private readonly IPagosServiciosServicio _pagosServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
+        private readonly IMapper _mapper;
         private readonly ILogger<PagosServiciosController> _logger;
 
         public PagosServiciosController(
             IPagosServiciosServicio pagosServicio,
             IAuditoriaServicio auditoriaServicio,
+            IMapper mapper,
             ILogger<PagosServiciosController> logger)
         {
             _pagosServicio = pagosServicio;
             _auditoriaServicio = auditoriaServicio;
+            _mapper = mapper;
             _logger = logger;
         }
 
@@ -34,7 +38,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var proveedores = await _pagosServicio.ObtenerProveedoresAsync();
 
                 return Ok(ApiResponse<IEnumerable<ProveedorServicioDto>>.Ok(
-                    PagosServiciosReglas.MapearProveedoresADto(proveedores)));
+                    _mapper.Map<IEnumerable<ProveedorServicioDto>>(proveedores)));
             }
             catch (Exception ex)
             {
@@ -56,7 +60,10 @@ namespace SistemaBancaEnLinea.API.Controllers
                     request.ProveedorId, request.NumeroContrato);
 
                 return Ok(ApiResponse<ValidacionContratoResponse>.Ok(
-                    PagosServiciosReglas.CrearRespuestaValidacion(esValido, proveedor.Nombre)));
+                    new ValidacionContratoResponse(
+                        esValido,
+                        esValido ? "Número de contrato válido." : "El número de contrato no cumple con el formato requerido.",
+                        proveedor.Nombre)));
             }
             catch (Exception ex)
             {
@@ -95,7 +102,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 return CreatedAtAction(nameof(ObtenerPago), new { id = transaccion.Id },
                     ApiResponse<PagoRealizadoDto>.Ok(
-                        PagosServiciosReglas.MapearAPagoRealizado(transaccion),
+                        _mapper.Map<PagoRealizadoDto>(transaccion),
                         "Pago realizado exitosamente."));
             }
             catch (InvalidOperationException ex)
@@ -140,7 +147,13 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 return CreatedAtAction(nameof(ObtenerPago), new { id = transaccion.Id },
                     ApiResponse<PagoProgramadoDto>.Ok(
-                        PagosServiciosReglas.MapearAPagoProgramado(transaccion, request.FechaProgramada),
+                        new PagoProgramadoDto(
+                            transaccion.Id, 
+                            transaccion.Estado, 
+                            request.FechaProgramada, 
+                            transaccion.Monto, 
+                            transaccion.Comision,
+                            transaccion.ProveedorServicio?.Nombre),
                         "Pago programado exitosamente."));
             }
             catch (InvalidOperationException ex)
@@ -170,7 +183,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     return NotFound(ApiResponse.Fail("Pago no encontrado."));
 
                 return Ok(ApiResponse<PagoDetalleDto>.Ok(
-                    PagosServiciosReglas.MapearAPagoDetalle(pago)));
+                    _mapper.Map<PagoDetalleDto>(pago)));
             }
             catch (Exception ex)
             {
@@ -191,7 +204,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var pagos = await _pagosServicio.ObtenerHistorialPagosAsync(clienteId);
 
                 return Ok(ApiResponse<IEnumerable<PagoListaDto>>.Ok(
-                    PagosServiciosReglas.MapearAPagoLista(pagos)));
+                    _mapper.Map<IEnumerable<PagoListaDto>>(pagos).OrderByDescending(p => p.FechaCreacion)));
             }
             catch (Exception ex)
             {
@@ -209,7 +222,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var pagos = await _pagosServicio.ObtenerHistorialPagosAsync(clienteId);
 
                 return Ok(ApiResponse<IEnumerable<PagoResumenDto>>.Ok(
-                    PagosServiciosReglas.MapearAPagoResumen(pagos)));
+                    _mapper.Map<IEnumerable<PagoResumenDto>>(pagos)));
             }
             catch (Exception ex)
             {

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AutoMapper;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
@@ -14,15 +15,18 @@ namespace SistemaBancaEnLinea.API.Controllers
     {
         private readonly ICuentaServicio _cuentaServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
+        private readonly IMapper _mapper;
         private readonly ILogger<CuentasController> _logger;
 
         public CuentasController(
             ICuentaServicio cuentaServicio,
             IAuditoriaServicio auditoriaServicio,
+            IMapper mapper,
             ILogger<CuentasController> logger)
         {
             _cuentaServicio = cuentaServicio;
             _auditoriaServicio = auditoriaServicio;
+            _mapper = mapper;
             _logger = logger;
         }
 
@@ -38,7 +42,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(clienteId.Value);
 
                 return Ok(ApiResponse<IEnumerable<CuentaListaDto>>.Ok(
-                    CuentasReglas.MapearAListaDto(cuentas)));
+                    _mapper.Map<IEnumerable<CuentaListaDto>>(cuentas)));
             }
             catch (Exception ex)
             {
@@ -56,7 +60,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var cuentas = await _cuentaServicio.ObtenerTodasConRelacionesAsync();
 
                 return Ok(ApiResponse<IEnumerable<CuentaCompletaDto>>.Ok(
-                    CuentasReglas.MapearACompletaDto(cuentas)));
+                    _mapper.Map<IEnumerable<CuentaCompletaDto>>(cuentas)));
             }
             catch (Exception ex)
             {
@@ -78,7 +82,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     return Forbid();
 
                 return Ok(ApiResponse<CuentaCompletaDto>.Ok(
-                    CuentasReglas.MapearACompletaDto(cuenta)));
+                    _mapper.Map<CuentaCompletaDto>(cuenta)));
             }
             catch (Exception ex)
             {
@@ -111,7 +115,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 return CreatedAtAction(nameof(GetAccount), new { id = cuenta.Id },
                     ApiResponse<CuentaCreacionDto>.Ok(
-                        CuentasReglas.MapearACreacionDto(cuenta),
+                        _mapper.Map<CuentaCreacionDto>(cuenta),
                         "Cuenta creada exitosamente"));
             }
             catch (InvalidOperationException ex)
@@ -135,7 +139,6 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cuenta == null)
                     return NotFound(ApiResponse.Fail("Cuenta no encontrada"));
 
-                // Validar permisos de modificación
                 var (permitido, error) = await PuedoModificarCuentaAsync(cuenta);
                 if (!permitido)
                     return StatusCode(403, ApiResponse.Fail(error!));
@@ -152,7 +155,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     $"Cuenta {cuenta.Numero} {accion}");
 
                 return Ok(ApiResponse<CuentaEstadoDto>.Ok(
-                    CuentasReglas.MapearAEstadoDto(cuenta, $"Cuenta {accion} exitosamente")));
+                    new CuentaEstadoDto(cuenta.Id, cuenta.Numero, cuenta.Estado, $"Cuenta {accion} exitosamente")));
             }
             catch (InvalidOperationException ex)
             {
@@ -175,7 +178,6 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cuenta == null)
                     return NotFound(ApiResponse.Fail("Cuenta no encontrada"));
 
-                // Validar permisos de modificación
                 var (permitido, error) = await PuedoModificarCuentaAsync(cuenta);
                 if (!permitido)
                     return StatusCode(403, ApiResponse.Fail(error!));
@@ -188,7 +190,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 cuenta = await _cuentaServicio.ObtenerCuentaAsync(id);
 
                 return Ok(ApiResponse<CuentaEstadoDto>.Ok(
-                    CuentasReglas.MapearAEstadoDto(cuenta!, "Cuenta cerrada exitosamente")));
+                    new CuentaEstadoDto(cuenta!.Id, cuenta.Numero, cuenta.Estado, "Cuenta cerrada exitosamente")));
             }
             catch (InvalidOperationException ex)
             {
@@ -214,7 +216,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     return Forbid();
 
                 return Ok(ApiResponse<CuentaBalanceDto>.Ok(
-                    CuentasReglas.MapearABalanceDto(cuenta)));
+                    _mapper.Map<CuentaBalanceDto>(cuenta)));
             }
             catch (Exception ex)
             {
@@ -233,7 +235,6 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cuenta == null)
                     return NotFound(ApiResponse.Fail("Cuenta no encontrada"));
 
-                // Validar permisos de modificación
                 var (permitido, error) = await PuedoModificarCuentaAsync(cuenta);
                 if (!permitido)
                     return StatusCode(403, ApiResponse.Fail(error!));
@@ -292,7 +293,6 @@ namespace SistemaBancaEnLinea.API.Controllers
             var role = GetUserRole();
             var clienteId = GetClienteId();
 
-            // Cliente solo puede modificar sus propias cuentas
             if (role == "Cliente")
             {
                 if (!clienteId.HasValue || clienteId.Value != cuenta.ClienteId)
@@ -300,7 +300,6 @@ namespace SistemaBancaEnLinea.API.Controllers
                 return (true, null);
             }
 
-            // Gestor puede modificar cuentas de sus clientes asignados
             if (role == "Gestor")
             {
                 var cuentaConRelaciones = await _cuentaServicio.ObtenerCuentaConRelacionesAsync(cuenta.Id);
@@ -309,7 +308,6 @@ namespace SistemaBancaEnLinea.API.Controllers
                 return (true, null);
             }
 
-            // Administrador: no puede modificar cuentas de otros administradores
             if (role == "Administrador")
             {
                 var cuentaConRelaciones = await _cuentaServicio.ObtenerCuentaConRelacionesAsync(cuenta.Id);

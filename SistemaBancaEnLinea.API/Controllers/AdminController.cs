@@ -1,8 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AutoMapper;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
-using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
@@ -14,17 +14,20 @@ namespace SistemaBancaEnLinea.API.Controllers
         private readonly IUsuarioServicio _usuarioServicio;
         private readonly IProveedorServicioServicio _proveedorServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
+        private readonly IMapper _mapper;
         private readonly ILogger<AdminController> _logger;
 
         public AdminController(
             IUsuarioServicio usuarioServicio,
             IProveedorServicioServicio proveedorServicio,
             IAuditoriaServicio auditoriaServicio,
+            IMapper mapper,
             ILogger<AdminController> logger)
         {
             _usuarioServicio = usuarioServicio;
             _proveedorServicio = proveedorServicio;
             _auditoriaServicio = auditoriaServicio;
+            _mapper = mapper;
             _logger = logger;
         }
 
@@ -54,7 +57,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var usuarios = await _usuarioServicio.ObtenerTodosAsync();
                 return Ok(ApiResponse<IEnumerable<UsuarioListaDto>>.Ok(
-                    UsuarioReglas.MapearAListaDto(usuarios)));
+                    _mapper.Map<IEnumerable<UsuarioListaDto>>(usuarios)));
             }
             catch (Exception ex)
             {

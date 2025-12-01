@@ -1,8 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AutoMapper;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
-using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
@@ -12,15 +12,18 @@ namespace SistemaBancaEnLinea.API.Controllers
     {
         private readonly IUsuarioServicio _usuarioServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
+        private readonly IMapper _mapper;
         private readonly ILogger<UsersController> _logger;
 
         public UsersController(
             IUsuarioServicio usuarioServicio,
             IAuditoriaServicio auditoriaServicio,
+            IMapper mapper,
             ILogger<UsersController> logger)
         {
             _usuarioServicio = usuarioServicio;
             _auditoriaServicio = auditoriaServicio;
+            _mapper = mapper;
             _logger = logger;
         }
 
@@ -32,7 +35,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var usuarios = await _usuarioServicio.ObtenerTodosAsync();
                 return Ok(ApiResponse<IEnumerable<UsuarioListaDto>>.Ok(
-                    UsuarioReglas.MapearAListaDto(usuarios)));
+                    _mapper.Map<IEnumerable<UsuarioListaDto>>(usuarios)));
             }
             catch (Exception ex)
             {
@@ -52,7 +55,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     return NotFound(ApiResponse.Fail("Usuario no encontrado."));
 
                 return Ok(ApiResponse<UsuarioDetalleDto>.Ok(
-                    UsuarioReglas.MapearADetalleDto(usuario)));
+                    _mapper.Map<UsuarioDetalleDto>(usuario)));
             }
             catch (Exception ex)
             {
@@ -77,7 +80,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 return CreatedAtAction(nameof(GetUser), new { id = resultado.Datos!.Id },
                     ApiResponse<UsuarioCreacionDto>.Ok(
-                        UsuarioReglas.MapearACreacionDto(resultado.Datos),
+                        _mapper.Map<UsuarioCreacionDto>(resultado.Datos),
                         "Usuario creado exitosamente"));
             }
             catch (Exception ex)
@@ -102,7 +105,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     GetCurrentUserId(), "ActualizacionUsuario", $"Usuario {resultado.Datos!.Email} actualizado");
 
                 return Ok(ApiResponse<UsuarioActualizacionDto>.Ok(
-                    UsuarioReglas.MapearAActualizacionDto(resultado.Datos),
+                    _mapper.Map<UsuarioActualizacionDto>(resultado.Datos),
                     "Usuario actualizado exitosamente"));
             }
             catch (Exception ex)
@@ -131,7 +134,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     $"Usuario {resultado.Datos.Email} {accion}");
 
                 return Ok(ApiResponse<UsuarioBloqueoDto>.Ok(
-                    UsuarioReglas.MapearABloqueoDto(resultado.Datos),
+                    _mapper.Map<UsuarioBloqueoDto>(resultado.Datos),
                     $"Usuario {accion} exitosamente"));
             }
             catch (Exception ex)
@@ -149,7 +152,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var existe = await _usuarioServicio.ExisteEmailAsync(email);
                 return Ok(ApiResponse<EmailDisponibilidadDto>.Ok(
-                    UsuarioReglas.CrearEmailDisponibilidadDto(existe)));
+                    new EmailDisponibilidadDto(!existe)));
             }
             catch (Exception ex)
             {
@@ -159,7 +162,6 @@ namespace SistemaBancaEnLinea.API.Controllers
         }
 
         [HttpPut("{id}/change-password")]
-        //[Authorize]
         public async Task<IActionResult> ChangePassword(int id, [FromBody] CambioContrasenaRequest request)
         {
             try
@@ -180,7 +182,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     GetCurrentUserId(), "CambioContrasena", $"Contraseña cambiada para usuario {usuario?.Email}");
 
                 return Ok(ApiResponse<CambioContrasenaDto>.Ok(
-                    UsuarioReglas.MapearACambioContrasenaDto(usuario!),
+                    _mapper.Map<CambioContrasenaDto>(usuario!),
                     "Contraseña actualizada exitosamente"));
             }
             catch (Exception ex)

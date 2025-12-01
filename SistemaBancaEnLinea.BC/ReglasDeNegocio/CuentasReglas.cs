@@ -1,5 +1,4 @@
 ﻿using SistemaBancaEnLinea.BC.Modelos;
-using SistemaBancaEnLinea.BC.Modelos.DTOs;
 
 namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
 {
@@ -23,8 +22,6 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
 
         // RF-B1: Estados de cuenta
         public static readonly string[] ESTADOS_CUENTA = { "Activa", "Bloqueada", "Cerrada" };
-
-        // ==================== VALIDACIONES ====================
 
         public static bool EsCuentaActiva(Cuenta cuenta) =>
             cuenta.Estado == "Activa";
@@ -61,10 +58,6 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
             return (true, null);
         }
 
-        /// <summary>
-        /// Valida si un cliente puede abrir otra cuenta del mismo tipo y moneda
-        /// Restricción: No puede abrir más de 3 cuentas del mismo tipo y moneda
-        /// </summary>
         public static (bool EsValido, string? Error) ValidarMaximoCuentasMismoTipoMoneda(
             IEnumerable<Cuenta> cuentasExistentes, string tipo, string moneda)
         {
@@ -78,97 +71,5 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
 
             return (true, null);
         }
-
-        // ==================== MAPEOS ====================
-
-        public static CuentaListaDto MapearAListaDto(Cuenta cuenta) =>
-            new(
-                cuenta.Id,
-                cuenta.Numero,
-                cuenta.Tipo,
-                cuenta.Moneda,
-                cuenta.Saldo,
-                cuenta.Estado,
-                cuenta.FechaApertura,
-                cuenta.Cliente?.UsuarioAsociado?.Nombre,
-                cuenta.ClienteId,
-                LIMITE_DIARIO_DEFAULT,
-                cuenta.Saldo
-            );
-
-        public static IEnumerable<CuentaListaDto> MapearAListaDto(IEnumerable<Cuenta> cuentas) =>
-            cuentas.Select(MapearAListaDto);
-
-        public static CuentaDetalleDto MapearADetalleDto(Cuenta cuenta) =>
-            new(
-                cuenta.Id,
-                cuenta.Numero,
-                cuenta.Tipo,
-                cuenta.Moneda,
-                cuenta.Saldo,
-                cuenta.Estado,
-                cuenta.FechaApertura,
-                cuenta.ClienteId,
-                cuenta.Cliente?.UsuarioAsociado?.Nombre ?? "N/A"
-            );
-
-        public static CuentaCreacionDto MapearACreacionDto(Cuenta cuenta) =>
-            new(
-                cuenta.Id,
-                cuenta.Numero,
-                cuenta.Tipo,
-                cuenta.Moneda,
-                cuenta.Saldo,
-                cuenta.Estado
-            );
-
-        public static CuentaBalanceDto MapearABalanceDto(Cuenta cuenta) =>
-            new(
-                cuenta.Saldo,
-                cuenta.Saldo,
-                cuenta.Moneda
-            );
-
-        public static CuentaEstadoDto MapearAEstadoDto(Cuenta cuenta, string mensaje) =>
-            new(
-                cuenta.Id,
-                cuenta.Numero,
-                cuenta.Estado,
-                mensaje
-            );
-
-        public static CuentaCompletaDto MapearACompletaDto(Cuenta cuenta) =>
-            new(
-                cuenta.Id,
-                cuenta.Numero,
-                cuenta.Tipo,
-                cuenta.Moneda,
-                cuenta.Saldo,
-                cuenta.Estado,
-                cuenta.FechaApertura,
-                cuenta.Cliente != null ? new CuentaRelacionClienteDto(
-                    cuenta.Cliente.Id,
-                    cuenta.Cliente.Direccion,
-                    cuenta.Cliente.FechaNacimiento,
-                    cuenta.Cliente.Estado,
-                    cuenta.Cliente.FechaRegistro
-                ) : null,
-                cuenta.Cliente?.UsuarioAsociado != null ? new CuentaRelacionUsuarioDto(
-                    cuenta.Cliente.UsuarioAsociado.Id,
-                    cuenta.Cliente.UsuarioAsociado.Nombre,
-                    cuenta.Cliente.UsuarioAsociado.Email,
-                    cuenta.Cliente.UsuarioAsociado.Telefono,
-                    cuenta.Cliente.UsuarioAsociado.Identificacion,
-                    cuenta.Cliente.UsuarioAsociado.Rol
-                ) : null,
-                cuenta.Cliente?.GestorAsignado != null ? new CuentaRelacionGestorDto(
-                    cuenta.Cliente.GestorAsignado.Id,
-                    cuenta.Cliente.GestorAsignado.Nombre,
-                    cuenta.Cliente.GestorAsignado.Email
-                ) : null
-            );
-
-        public static IEnumerable<CuentaCompletaDto> MapearACompletaDto(IEnumerable<Cuenta> cuentas) =>
-            cuentas.Select(MapearACompletaDto);
     }
 }

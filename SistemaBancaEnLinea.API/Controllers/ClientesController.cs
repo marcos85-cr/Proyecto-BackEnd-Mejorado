@@ -1,8 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AutoMapper;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
-using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 using static SistemaBancaEnLinea.BC.ReglasDeNegocio.ConstantesGenerales;
 
 namespace SistemaBancaEnLinea.API.Controllers
@@ -14,15 +14,18 @@ namespace SistemaBancaEnLinea.API.Controllers
     {
         private readonly IClienteServicio _clienteServicio;
         private readonly ICuentaServicio _cuentaServicio;
+        private readonly IMapper _mapper;
         private readonly ILogger<ClientesController> _logger;
 
         public ClientesController(
             IClienteServicio clienteServicio,
             ICuentaServicio cuentaServicio,
+            IMapper mapper,
             ILogger<ClientesController> logger)
         {
             _clienteServicio = clienteServicio;
             _cuentaServicio = cuentaServicio;
+            _mapper = mapper;
             _logger = logger;
         }
 
@@ -37,7 +40,6 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 if (role == "Gestor")
                 {
-                    // Gestor solo ve sus clientes asignados
                     var gestorId = GetUsuarioIdFromToken();
                     clientes = await _clienteServicio.ObtenerClientesPorGestorAsync(gestorId);
                 }
@@ -46,9 +48,8 @@ namespace SistemaBancaEnLinea.API.Controllers
                     clientes = await _clienteServicio.ObtenerTodosAsync();
                 }
 
-                var clientesDto = clientes.Select(ClientesReglas.MapearAListaDto).ToList();
-                
-                return Ok(ApiResponse<object>.Ok(clientesDto));
+                return Ok(ApiResponse<object>.Ok(
+                    _mapper.Map<IEnumerable<ClienteListaDto>>(clientes)));
             }
             catch (Exception ex)
             {
@@ -66,7 +67,6 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (cliente == null)
                     return NotFound(ApiResponse<object>.Fail("Cliente no encontrado."));
 
-                // Validar acceso para Gestor
                 var role = GetUserRole();
                 if (role == "Gestor")
                 {
@@ -76,7 +76,30 @@ namespace SistemaBancaEnLinea.API.Controllers
                 }
 
                 var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(id);
-                var clienteDto = ClientesReglas.MapearADetalleDto(cliente, cuentas);
+                
+                // ClienteDetalleDto requiere datos calculados, mapeo manual
+                var usuario = cliente.UsuarioAsociado;
+                var cuentasActivas = cuentas.Count(c => c.Estado == ESTADO_CUENTA_ACTIVA);
+                var saldoTotal = cuentas.Where(c => c.Estado == ESTADO_CUENTA_ACTIVA).Sum(c => c.Saldo);
+                
+                var clienteDto = new ClienteDetalleDto(
+                    cliente.Id,
+                    usuario?.Id ?? 0,
+                    usuario?.Identificacion ?? "",
+                    usuario?.Nombre ?? "",
+                    usuario?.Telefono,
+                    usuario?.Email ?? "",
+                    cliente.Direccion,
+                    cliente.FechaNacimiento,
+                    cliente.Estado,
+                    cliente.FechaRegistro,
+                    cliente.UltimaOperacion,
+                    cuentasActivas,
+                    saldoTotal,
+                    usuario != null ? _mapper.Map<UsuarioVinculadoDto>(usuario) : null,
+                    cliente.GestorAsignado != null ? _mapper.Map<GestorAsignadoDto>(cliente.GestorAsignado) : null,
+                    _mapper.Map<List<CuentaClienteDto>>(cuentas)
+                );
                 
                 return Ok(ApiResponse<object>.Ok(clienteDto));
             }
@@ -116,11 +139,12 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (!resultado.Exitoso)
                     return BadRequest(ApiResponse<object>.Fail(resultado.Error!));
 
-                var clienteDto = ClientesReglas.MapearACreacionDto(resultado.Datos!);
                 return CreatedAtAction(
                     nameof(ObtenerPorId), 
                     new { id = resultado.Datos!.Id }, 
-                    ApiResponse<object>.Ok(clienteDto, "Cliente creado exitosamente."));
+                    ApiResponse<object>.Ok(
+                        _mapper.Map<ClienteCreacionDto>(resultado.Datos),
+                        "Cliente creado exitosamente."));
             }
             catch (Exception ex)
             {
@@ -135,7 +159,6 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                // Validar acceso para Gestor
                 var role = GetUserRole();
                 if (role == "Gestor")
                 {
@@ -147,7 +170,6 @@ namespace SistemaBancaEnLinea.API.Controllers
                     if (cliente.GestorAsignadoId != gestorId)
                         return StatusCode(403, ApiResponse<object>.Fail("No puede modificar clientes fuera de su cartera."));
                     
-                    // Gestor no puede cambiar el gestor asignado
                     request = request with { GestorId = null };
                 }
 
@@ -156,8 +178,9 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (!resultado.Exitoso)
                     return BadRequest(ApiResponse<object>.Fail(resultado.Error!));
 
-                var clienteDto = ClientesReglas.MapearAActualizacionDto(resultado.Datos!);
-                return Ok(ApiResponse<object>.Ok(clienteDto, "Cliente actualizado exitosamente."));
+                return Ok(ApiResponse<object>.Ok(
+                    _mapper.Map<ClienteActualizacionDto>(resultado.Datos!),
+                    "Cliente actualizado exitosamente."));
             }
             catch (Exception ex)
             {
@@ -175,7 +198,6 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse<object>.Fail("Cliente no identificado."));
 
-                // El cliente no puede cambiar su propio gestor
                 request = request with { GestorId = null };
                 
                 return await Actualizar(clienteId, request);

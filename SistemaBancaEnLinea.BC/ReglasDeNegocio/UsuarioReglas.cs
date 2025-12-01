@@ -1,5 +1,4 @@
 using SistemaBancaEnLinea.BC.Modelos;
-using SistemaBancaEnLinea.BC.Modelos.DTOs;
 
 namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
 {
@@ -357,110 +356,6 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
             if (!string.IsNullOrWhiteSpace(rol) && rol != usuario.Rol)
                 usuario.Rol = rol;
         }
-
-        #endregion
-
-        #region Mapeo a DTOs
-
-        /// <summary>
-        /// Mapea un usuario a DTO de lista
-        /// </summary>
-        public static UsuarioListaDto MapearAListaDto(Usuario u, int cuentasActivas = 0) => new(
-            u.Id,
-            u.Email,
-            u.Rol,
-            u.Nombre, // Propiedad calculada: ClienteAsociado?.NombreCompleto ?? Email
-            u.Identificacion,
-            u.Telefono,
-            u.EstaBloqueado,
-            u.IntentosFallidos,
-            u.FechaCreacion,
-            cuentasActivas
-        );
-
-        /// <summary>
-        /// Mapea lista de usuarios a DTOs
-        /// </summary>
-        public static IEnumerable<UsuarioListaDto> MapearAListaDto(IEnumerable<Usuario> usuarios) =>
-            usuarios.Select(u => MapearAListaDto(u));
-
-        /// <summary>
-        /// Mapea un usuario a DTO de detalle
-        /// </summary>
-        public static UsuarioDetalleDto MapearADetalleDto(Usuario u) => new(
-            u.Id.ToString(),
-            u.Email,
-            u.Rol,
-            u.Nombre,
-            u.Identificacion,
-            u.Telefono,
-            u.EstaBloqueado,
-            u.IntentosFallidos,
-            u.FechaCreacion,
-            u.FechaBloqueo
-        );
-
-        /// <summary>
-        /// Mapea un usuario a DTO de creación
-        /// </summary>
-        public static UsuarioCreacionDto MapearACreacionDto(Usuario u) => new(
-            u.Id.ToString(),
-            u.Email,
-            u.Rol,
-            u.Nombre
-        );
-
-        /// <summary>
-        /// Mapea un usuario a DTO de actualización
-        /// </summary>
-        public static UsuarioActualizacionDto MapearAActualizacionDto(Usuario u) => new(
-            u.Id.ToString(),
-            u.Email,
-            u.Rol,
-            u.Nombre,
-            u.Identificacion,
-            u.Telefono
-        );
-
-        /// <summary>
-        /// Mapea un usuario a DTO de bloqueo
-        /// </summary>
-        public static UsuarioBloqueoDto MapearABloqueoDto(Usuario u) => new(
-            u.Id.ToString(),
-            u.EstaBloqueado,
-            u.FechaBloqueo
-        );
-
-        /// <summary>
-        /// Crea DTO de disponibilidad de email
-        /// </summary>
-        public static EmailDisponibilidadDto CrearEmailDisponibilidadDto(bool existe) => new(!existe);
-
-        /// <summary>
-        /// Mapea un usuario a DTO de cambio de contraseña
-        /// </summary>
-        public static CambioContrasenaDto MapearACambioContrasenaDto(Usuario u) => new(
-            u.Id.ToString(),
-            u.Email,
-            DateTime.UtcNow
-        );
-
-        /// <summary>
-        /// Mapea token y usuario a DTO de login
-        /// </summary>
-        public static LoginDto MapearALoginDto(string token) => new( token );
-
-        /// <summary>
-        /// Mapea un usuario a DTO de registro
-        /// </summary>
-        public static RegistroDto MapearARegistroDto(Usuario u) => new(
-            u.Id.ToString(),
-            u.Email,
-            u.Rol,
-            u.Nombre,
-            u.Identificacion,
-            u.Telefono
-        );
 
         #endregion
     }

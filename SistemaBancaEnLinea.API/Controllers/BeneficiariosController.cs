@@ -1,6 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using AutoMapper;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
 using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
@@ -13,15 +15,18 @@ namespace SistemaBancaEnLinea.API.Controllers
     {
         private readonly IBeneficiarioServicio _beneficiarioServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
+        private readonly IMapper _mapper;
         private readonly ILogger<BeneficiariosController> _logger;
 
         public BeneficiariosController(
             IBeneficiarioServicio beneficiarioServicio,
             IAuditoriaServicio auditoriaServicio,
+            IMapper mapper,
             ILogger<BeneficiariosController> logger)
         {
             _beneficiarioServicio = beneficiarioServicio;
             _auditoriaServicio = auditoriaServicio;
+            _mapper = mapper;
             _logger = logger;
         }
 
@@ -34,7 +39,9 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
 
-                var beneficiario = BeneficiariosReglas.MapearDesdeRequest(request, clienteId);
+                var beneficiario = _mapper.Map<Beneficiario>(request);
+                beneficiario.ClienteId = clienteId;
+                
                 var beneficiarioCreado = await _beneficiarioServicio.CrearBeneficiarioAsync(beneficiario);
 
                 await _auditoriaServicio.RegistrarAsync(
@@ -42,7 +49,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 return CreatedAtAction(nameof(ObtenerBeneficiario), new { id = beneficiarioCreado.Id },
                     ApiResponse<BeneficiarioCreacionDto>.Ok(
-                        BeneficiariosReglas.MapearACreacionDto(beneficiarioCreado),
+                        _mapper.Map<BeneficiarioCreacionDto>(beneficiarioCreado),
                         "Beneficiario creado. Debe confirmarlo antes de poder usarlo."));
             }
             catch (InvalidOperationException ex)
@@ -69,9 +76,10 @@ namespace SistemaBancaEnLinea.API.Controllers
                     return Forbid();
 
                 var tieneOperaciones = await _beneficiarioServicio.TieneOperacionesPendientesAsync(id);
+                var dto = _mapper.Map<BeneficiarioDetalleDto>(beneficiario);
+                dto = dto with { TieneOperacionesPendientes = tieneOperaciones };
 
-                return Ok(ApiResponse<BeneficiarioDetalleDto>.Ok(
-                    BeneficiariosReglas.MapearADetalleDto(beneficiario, tieneOperaciones)));
+                return Ok(ApiResponse<BeneficiarioDetalleDto>.Ok(dto));
             }
             catch (Exception ex)
             {
@@ -98,7 +106,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     GetUsuarioId(), "ConfirmacionBeneficiario", $"Beneficiario {beneficiario.Alias} confirmado");
 
                 return Ok(ApiResponse<BeneficiarioConfirmacionDto>.Ok(
-                    BeneficiariosReglas.MapearAConfirmacionDto(beneficiario),
+                    _mapper.Map<BeneficiarioConfirmacionDto>(beneficiario),
                     "Beneficiario confirmado exitosamente."));
             }
             catch (InvalidOperationException ex)
@@ -124,7 +132,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var beneficiarios = await _beneficiarioServicio.ObtenerMisBeneficiariosAsync(clienteId);
 
                 return Ok(ApiResponse<IEnumerable<BeneficiarioListaDto>>.Ok(
-                    BeneficiariosReglas.MapearAListaDto(beneficiarios)));
+                    _mapper.Map<IEnumerable<BeneficiarioListaDto>>(beneficiarios)));
             }
             catch (Exception ex)
             {
@@ -142,7 +150,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var beneficiarios = await _beneficiarioServicio.ObtenerMisBeneficiariosAsync(clienteId);
 
                 return Ok(ApiResponse<IEnumerable<BeneficiarioListaDto>>.Ok(
-                    BeneficiariosReglas.MapearAListaDto(beneficiarios)));
+                    _mapper.Map<IEnumerable<BeneficiarioListaDto>>(beneficiarios)));
             }
             catch (Exception ex)
             {
@@ -169,7 +177,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                     GetUsuarioId(), "ActualizacionBeneficiario", $"Beneficiario {id} actualizado a alias: {request.NuevoAlias}");
 
                 return Ok(ApiResponse<BeneficiarioActualizacionDto>.Ok(
-                    BeneficiariosReglas.MapearAActualizacionDto(beneficiario),
+                    _mapper.Map<BeneficiarioActualizacionDto>(beneficiario),
                     "Beneficiario actualizado."));
             }
             catch (InvalidOperationException ex)

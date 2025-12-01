@@ -1,38 +1,12 @@
 using SistemaBancaEnLinea.BC.Modelos;
-using SistemaBancaEnLinea.BC.Modelos.DTOs;
 
 namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
 {
     /// <summary>
-    /// Reglas para mapeo y validación de proveedores de servicio
+    /// Reglas para validación de proveedores de servicio
     /// </summary>
     public static class ProveedorServicioReglas
     {
-        #region ========== MAPEO DTOs ==========
-
-        public static ProveedorListaDto MapearAListaDto(ProveedorServicio p) =>
-            new(p.Id.ToString(), p.Nombre, ExtraerTipo(p.Nombre), 
-                ObtenerIcono(ExtraerTipo(p.Nombre)), p.ReglaValidacionContrato,
-                true, p.CreadoPor?.Nombre ?? "Sistema");
-
-        public static IEnumerable<ProveedorListaDto> MapearAListaDto(IEnumerable<ProveedorServicio> proveedores) =>
-            proveedores.Select(MapearAListaDto);
-
-        public static ProveedorDetalleDto MapearADetalleDto(ProveedorServicio p) =>
-            new(p.Id.ToString(), p.Nombre, ExtraerTipo(p.Nombre),
-                ObtenerIcono(ExtraerTipo(p.Nombre)), p.ReglaValidacionContrato, true);
-
-        public static ProveedorCreacionDto MapearACreacionDto(ProveedorServicio p) =>
-            new(p.Id.ToString(), p.Nombre, p.ReglaValidacionContrato);
-
-        public static ValidacionReferenciaDto CrearValidacionDto(bool valida, decimal? monto = null, string? nombre = null) =>
-            new(valida, monto, nombre,
-                valida ? "Referencia válida" : "Número de referencia no válido");
-
-        #endregion
-
-        #region ========== UTILIDADES ==========
-
         public static string ExtraerTipo(string nombre)
         {
             if (nombre.Contains("Electricidad") || nombre.Contains("ICE") || nombre.Contains("CNFL"))
@@ -77,7 +51,5 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
                 return false;
             }
         }
-
-        #endregion
     }
 }
