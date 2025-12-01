@@ -109,6 +109,57 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
+        [HttpGet("por-usuario/{usuarioId}")]
+        public async Task<IActionResult> ObtenerPorUsuarioId(int usuarioId)
+        {
+            try
+            {
+                var cliente = await _clienteServicio.ObtenerPorUsuarioAsync(usuarioId);
+                if (cliente == null)
+                    return NotFound(ApiResponse<object>.Fail("Cliente no encontrado para este usuario."));
+
+                var role = GetUserRole();
+                if (role == "Gestor")
+                {
+                    var gestorId = GetUsuarioIdFromToken();
+                    if (cliente.GestorAsignadoId != gestorId)
+                        return StatusCode(403, ApiResponse<object>.Fail("No puede acceder a clientes fuera de su cartera."));
+                }
+
+                var cuentas = await _cuentaServicio.ObtenerMisCuentasAsync(cliente.Id);
+
+                var usuario = cliente.UsuarioAsociado;
+                var cuentasActivas = cuentas.Count(c => c.Estado == ESTADO_CUENTA_ACTIVA);
+                var saldoTotal = cuentas.Where(c => c.Estado == ESTADO_CUENTA_ACTIVA).Sum(c => c.Saldo);
+
+                var clienteDto = new ClienteDetalleDto(
+                    cliente.Id,
+                    usuario?.Id ?? 0,
+                    usuario?.Identificacion ?? "",
+                    usuario?.Nombre ?? "",
+                    usuario?.Telefono,
+                    usuario?.Email ?? "",
+                    cliente.Direccion,
+                    cliente.FechaNacimiento,
+                    cliente.Estado,
+                    cliente.FechaRegistro,
+                    cliente.UltimaOperacion,
+                    cuentasActivas,
+                    saldoTotal,
+                    usuario != null ? _mapper.Map<UsuarioVinculadoDto>(usuario) : null,
+                    cliente.GestorAsignado != null ? _mapper.Map<GestorAsignadoDto>(cliente.GestorAsignado) : null,
+                    _mapper.Map<List<CuentaClienteDto>>(cuentas)
+                );
+
+                return Ok(ApiResponse<object>.Ok(clienteDto));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo cliente por usuario {UsuarioId}", usuarioId);
+                return StatusCode(500, ApiResponse<object>.Fail("Error interno del servidor."));
+            }
+        }
+
         [HttpGet("mi-perfil")]
         public async Task<IActionResult> ObtenerMiPerfil()
         {
