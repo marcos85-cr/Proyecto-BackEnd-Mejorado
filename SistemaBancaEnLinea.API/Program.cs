@@ -9,6 +9,7 @@ using SistemaBancaEnLinea.BW;
 using SistemaBancaEnLinea.BW.CU;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.API.Middleware;
+using SistemaBancaEnLinea.API;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -92,7 +93,10 @@ builder.Services.AddScoped<GestionCuentasCU>();
 builder.Services.AddScoped<GestionUsuariosCU>();
 builder.Services.AddScoped<TransferenciasCU>();
 
-// 7. Configurar Controllers
+// 7. Registrar Background Service para programaciones
+builder.Services.AddHostedService<ProgramacionBackgroundService>();
+
+// 8. Configurar Controllers
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -100,7 +104,7 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
 
-// 8. Configurar Swagger
+// 9. Configurar Swagger
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
 {

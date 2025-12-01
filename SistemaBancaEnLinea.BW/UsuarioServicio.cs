@@ -545,12 +545,11 @@ namespace SistemaBancaEnLinea.BW
 
         private static string HashPassword(string password)
         {
-            using var sha256 = SHA256.Create();
-            return Convert.ToBase64String(sha256.ComputeHash(Encoding.UTF8.GetBytes(password)));
+            return BCrypt.Net.BCrypt.HashPassword(password, BCrypt.Net.BCrypt.GenerateSalt(12));
         }
 
         private static bool VerificarPassword(string password, string hash) =>
-            HashPassword(password) == hash;
+            BCrypt.Net.BCrypt.Verify(password, hash);
 
         #endregion
     }

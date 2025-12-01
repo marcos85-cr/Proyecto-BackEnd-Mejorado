@@ -17,7 +17,7 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
         public const int LONGITUD_MAXIMA_CUENTA = 20;
 
         // RF-C1: Estados del beneficiario
-        public static readonly string[] ESTADOS_BENEFICIARIO = { "Inactivo", "Confirmado", "Rechazado", "Inactivo" };
+        public static readonly string[] ESTADOS_BENEFICIARIO = { "Pendiente", "Confirmado", "Rechazado", "Inactivo" };
 
         public static bool ValidarAlias(string alias)
         {
