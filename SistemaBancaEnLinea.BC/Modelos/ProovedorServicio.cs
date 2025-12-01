@@ -14,6 +14,9 @@ namespace SistemaBancaEnLinea.BC.Modelos
         [Required]
         public string ReglaValidacionContrato { get; set; } = string.Empty;
 
+        // Formato legible del contrato (ej: "####-####-##")
+        public string? FormatoContrato { get; set; }
+
         // FK al Administrador que lo creó
         public int CreadoPorUsuarioId { get; set; }
         public Usuario CreadoPor { get; set; } = null!;

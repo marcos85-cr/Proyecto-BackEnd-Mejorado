@@ -75,6 +75,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 {
                     Nombre = request.Nombre,
                     ReglaValidacionContrato = request.ReglaValidacionContrato,
+                    FormatoContrato = request.FormatoContrato,
                     CreadoPorUsuarioId = GetCurrentUserId()
                 };
 
@@ -82,7 +83,7 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 return CreatedAtAction(nameof(ObtenerProveedor), new { id = creado.Id },
                     ApiResponse<ProveedorDto>.Ok(
-                        new ProveedorDto(creado.Id, creado.Nombre, creado.ReglaValidacionContrato),
+                        new ProveedorDto(creado.Id, creado.Nombre, creado.ReglaValidacionContrato, creado.FormatoContrato),
                         "Proveedor creado exitosamente"));
             }
             catch (InvalidOperationException ex)
@@ -92,7 +93,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creando proveedor");
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -106,12 +107,12 @@ namespace SistemaBancaEnLinea.API.Controllers
                     return NotFound(ApiResponse.Fail("Proveedor no encontrado"));
 
                 return Ok(ApiResponse<ProveedorDto>.Ok(
-                    new ProveedorDto(proveedor.Id, proveedor.Nombre, proveedor.ReglaValidacionContrato)));
+                    new ProveedorDto(proveedor.Id, proveedor.Nombre, proveedor.ReglaValidacionContrato, proveedor.FormatoContrato)));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo proveedor {Id}", id);
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -122,11 +123,44 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var proveedores = await _proveedorServicio.ObtenerTodosAsync();
                 return Ok(ApiResponse<IEnumerable<ProveedorDto>>.Ok(
-                    proveedores.Select(p => new ProveedorDto(p.Id, p.Nombre, p.ReglaValidacionContrato))));
+                    proveedores.Select(p => new ProveedorDto(p.Id, p.Nombre, p.ReglaValidacionContrato, p.FormatoContrato))));
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo proveedores");
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
+            }
+        }
+
+        [HttpPut("proveedores/{id}")]
+        public async Task<IActionResult> ActualizarProveedor(int id, [FromBody] ActualizarProveedorRequest request)
+        {
+            try
+            {
+                var proveedor = await _proveedorServicio.ObtenerPorIdAsync(id);
+                if (proveedor == null)
+                    return NotFound(ApiResponse.Fail("Proveedor no encontrado"));
+
+                if (request.Nombre != null)
+                    proveedor.Nombre = request.Nombre;
+                if (request.ReglaValidacion != null)
+                    proveedor.ReglaValidacionContrato = request.ReglaValidacion;
+                if (request.FormatoContrato != null)
+                    proveedor.FormatoContrato = request.FormatoContrato;
+
+                var actualizado = await _proveedorServicio.ActualizarAsync(id, proveedor);
+
+                return Ok(ApiResponse<ProveedorDto>.Ok(
+                    new ProveedorDto(actualizado.Id, actualizado.Nombre, actualizado.ReglaValidacionContrato, actualizado.FormatoContrato),
+                    "Proveedor actualizado exitosamente"));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return BadRequest(ApiResponse.Fail(ex.Message));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error actualizando proveedor {Id}", id);
                 return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }

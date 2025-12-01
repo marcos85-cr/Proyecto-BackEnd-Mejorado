@@ -78,6 +78,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 {
                     Nombre = request.Nombre,
                     ReglaValidacionContrato = request.ReglaValidacionContrato,
+                    FormatoContrato = request.FormatoContrato,
                     CreadoPorUsuarioId = adminId
                 };
 
@@ -117,6 +118,9 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 if (!string.IsNullOrWhiteSpace(request.ReglaValidacion))
                     proveedor.ReglaValidacionContrato = request.ReglaValidacion;
+
+                if (request.FormatoContrato != null)
+                    proveedor.FormatoContrato = request.FormatoContrato;
 
                 await _proveedorServicio.ActualizarAsync(id, proveedor);
 

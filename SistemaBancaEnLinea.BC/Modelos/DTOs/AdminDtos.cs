@@ -1,8 +1,8 @@
 namespace SistemaBancaEnLinea.BC.Modelos.DTOs
 {
-    public record CrearProveedorRequest(string Nombre, string ReglaValidacionContrato);
+    public record CrearProveedorRequest(string Nombre, string ReglaValidacionContrato, string? FormatoContrato = null);
 
-    public record ProveedorDto(int Id, string Nombre, string ReglaValidacionContrato);
+    public record ProveedorDto(int Id, string Nombre, string ReglaValidacionContrato, string? FormatoContrato);
 
     public record AuditoriaDto(
         int Id,

@@ -36,7 +36,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error en login");
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
         

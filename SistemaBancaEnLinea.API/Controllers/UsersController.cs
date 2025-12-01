@@ -65,7 +65,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         }
 
         [HttpPost]
-        [Authorize(Roles = "Administrador")]
+        //[Authorize(Roles = "Administrador")]
         public async Task<IActionResult> CreateUser([FromBody] UsuarioRequest request)
         {
             try

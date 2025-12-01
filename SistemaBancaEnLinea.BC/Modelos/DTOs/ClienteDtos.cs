@@ -202,7 +202,8 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
     public record ProveedorServicioDto(
         int Id,
         string Nombre,
-        string ReglaValidacionContrato
+        string ReglaValidacionContrato,
+        string? FormatoContrato
     );
 
     public record ValidacionContratoResponse(
@@ -418,7 +419,8 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
  
     public record ActualizarProveedorRequest(
         string? Nombre,
-        string? ReglaValidacion);
+        string? ReglaValidacion,
+        string? FormatoContrato);
 
     public record ValidarReferenciaRequest(string NumeroReferencia);
 
@@ -428,6 +430,7 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
         string Tipo,
         string Icon,
         string ReglaValidacion,
+        string? FormatoContrato,
         bool Activo,
         string CreadoPor);
 
@@ -437,12 +440,14 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
         string Tipo,
         string Icon,
         string ReglaValidacion,
+        string? FormatoContrato,
         bool Activo);
 
     public record ProveedorCreacionDto(
         string Id,
         string Nombre,
-        string ReglaValidacion);
+        string ReglaValidacion,
+        string? FormatoContrato);
 
     public record ValidacionReferenciaDto(
         bool Valida,

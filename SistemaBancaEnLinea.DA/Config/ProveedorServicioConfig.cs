@@ -23,6 +23,10 @@ namespace SistemaBancaEnLinea.DA.Config
                 .IsRequired()
                 .HasMaxLength(500);
 
+            builder.Property(ps => ps.FormatoContrato)
+                .HasColumnName("Formato_Contrato")
+                .HasMaxLength(100);
+
             // Relación con Usuario (Admin que lo creó)
             builder.HasOne(ps => ps.CreadoPor)
                 .WithMany()

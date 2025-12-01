@@ -196,6 +196,7 @@ namespace SistemaBancaEnLinea.BC.Mapping
                     ProveedorServicioReglas.ExtraerTipo(s.Nombre),
                     ProveedorServicioReglas.ObtenerIcono(ProveedorServicioReglas.ExtraerTipo(s.Nombre)),
                     s.ReglaValidacionContrato,
+                    s.FormatoContrato,
                     true,
                     s.CreadoPor != null ? s.CreadoPor.Nombre ?? "Sistema" : "Sistema"
                 ));
@@ -207,6 +208,7 @@ namespace SistemaBancaEnLinea.BC.Mapping
                     ProveedorServicioReglas.ExtraerTipo(s.Nombre),
                     ProveedorServicioReglas.ObtenerIcono(ProveedorServicioReglas.ExtraerTipo(s.Nombre)),
                     s.ReglaValidacionContrato,
+                    s.FormatoContrato,
                     true
                 ));
 
@@ -214,7 +216,8 @@ namespace SistemaBancaEnLinea.BC.Mapping
                 .ConstructUsing(s => new ProveedorCreacionDto(
                     s.Id.ToString(),
                     s.Nombre,
-                    s.ReglaValidacionContrato
+                    s.ReglaValidacionContrato,
+                    s.FormatoContrato
                 ));
 
             // ==================== TRANSACCION MAPPINGS ====================
