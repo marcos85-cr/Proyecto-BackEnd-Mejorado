@@ -162,14 +162,24 @@ namespace SistemaBancaEnLinea.API.Controllers
         }
 
         [HttpPut("{id}/change-password")]
+        [Authorize]
         public async Task<IActionResult> ChangePassword(int id, [FromBody] CambioContrasenaRequest request)
         {
             try
             {
+                var currentUserId = GetCurrentUserId();
+                var currentRole = GetCurrentUserRole();
+
+                _logger.LogInformation("ChangePassword - ID solicitado: {Id}, CurrentUserId: {CurrentUserId}, Role: {Role}",
+                    id, currentUserId, currentRole);
+
+                if (currentUserId != id && currentRole != "Administrador")
+                    return StatusCode(403, ApiResponse.Fail($"Solo puede cambiar su propia contraseña. (Tu ID: {currentUserId}, ID solicitado: {id})"));
+
                 var resultado = await _usuarioServicio.CambiarContrasenaAsync(
                     id,
-                    GetCurrentUserId(),
-                    GetCurrentUserRole(),
+                    currentUserId,
+                    currentRole,
                     request.ContrasenaActual,
                     request.NuevaContrasena);
 

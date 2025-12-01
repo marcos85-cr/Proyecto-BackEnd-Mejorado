@@ -351,9 +351,8 @@ namespace SistemaBancaEnLinea.BW
             string contrasenaActual,
             string nuevaContrasena)
         {
-            // Validar permisos: solo el mismo usuario o un admin puede cambiar
             if (solicitanteId != usuarioId && rolSolicitante != "Administrador")
-                return ResultadoOperacion<bool>.Fallo("No tiene permisos para cambiar esta contraseña.");
+                return ResultadoOperacion<bool>.Fallo($"No tiene permisos para cambiar esta contraseña. (SolicitanteId: {solicitanteId}, UsuarioId: {usuarioId}, Rol: {rolSolicitante})");
 
             // Obtener usuario
             var usuario = await _context.Usuarios.FindAsync(usuarioId);
