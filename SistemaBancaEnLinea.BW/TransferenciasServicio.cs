@@ -81,12 +81,8 @@ namespace SistemaBancaEnLinea.BW
                     return resultado;
                 }
 
-                // Calcular comisión
-                bool esTransferenciaPropia = request.CuentaDestinoId.HasValue && !request.BeneficiarioId.HasValue;
-                decimal comision = TransferenciasReglas.CalcularComision(esTransferenciaPropia);
-
                 // Validar saldo suficiente
-                if (TransferenciasReglas.ExcedeTransferenciasSaldo(cuentaOrigen.Saldo, request.Monto, comision))
+                if (TransferenciasReglas.ExcedeTransferenciasSaldo(cuentaOrigen.Saldo, request.Monto))
                 {
                     resultado.PuedeEjecutar = false;
                     resultado.Errores.Add("Saldo insuficiente.");
@@ -118,9 +114,9 @@ namespace SistemaBancaEnLinea.BW
                 resultado.PuedeEjecutar = true;
                 resultado.SaldoAntes = cuentaOrigen.Saldo;
                 resultado.Monto = request.Monto;
-                resultado.Comision = comision;
-                resultado.MontoTotal = request.Monto + comision;
-                resultado.SaldoDespues = cuentaOrigen.Saldo - request.Monto - comision;
+                resultado.Comision = 0;
+                resultado.MontoTotal = request.Monto;
+                resultado.SaldoDespues = cuentaOrigen.Saldo - request.Monto;
                 resultado.RequiereAprobacion = TransferenciasReglas.RequiereAprobacion(request.Monto);
                 resultado.LimiteDisponible = TransferenciasReglas.LIMITE_DIARIO_TRANSFERENCIA - montoTransferidoHoy;
                 resultado.Mensaje = resultado.RequiereAprobacion
@@ -185,7 +181,7 @@ namespace SistemaBancaEnLinea.BW
                     Estado = estadoInicial,
                     Monto = request.Monto,
                     Moneda = request.Moneda,
-                    Comision = preCheck.Comision,
+                    Comision = 0,
                     IdempotencyKey = request.IdempotencyKey,
                     FechaCreacion = DateTime.UtcNow,
                     SaldoAnterior = preCheck.SaldoAntes,
@@ -201,7 +197,7 @@ namespace SistemaBancaEnLinea.BW
                 // Solo actualizar saldos si es ejecución inmediata
                 if (estadoInicial == "Exitosa")
                 {
-                    cuentaOrigen!.Saldo -= (request.Monto + preCheck.Comision);
+                    cuentaOrigen!.Saldo -= request.Monto;
                     await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
 
                     // Acreditar cuenta destino (si es interna)
@@ -301,10 +297,10 @@ namespace SistemaBancaEnLinea.BW
                 var cuentaOrigen = await _cuentaAcciones.ObtenerPorIdAsync(transaccion.CuentaOrigenId);
 
                 // Verificar saldo suficiente antes de aprobar
-                if (cuentaOrigen!.Saldo < (transaccion.Monto + transaccion.Comision))
+                if (cuentaOrigen!.Saldo < transaccion.Monto)
                     throw new InvalidOperationException("Saldo insuficiente en la cuenta origen.");
 
-                cuentaOrigen.Saldo -= (transaccion.Monto + transaccion.Comision);
+                cuentaOrigen.Saldo -= transaccion.Monto;
                 await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
 
                 if (transaccion.CuentaDestinoId.HasValue)
@@ -387,8 +383,7 @@ namespace SistemaBancaEnLinea.BW
             sb.AppendLine();
             sb.AppendLine($"Cuenta Origen: {transaccion.CuentaOrigen?.Numero}");
             sb.AppendLine($"Monto: {transaccion.Moneda} {transaccion.Monto:N2}");
-            sb.AppendLine($"Comisión: {transaccion.Moneda} {transaccion.Comision:N2}");
-            sb.AppendLine($"Total: {transaccion.Moneda} {transaccion.Monto + transaccion.Comision:N2}");
+            sb.AppendLine($"Total: {transaccion.Moneda} {transaccion.Monto:N2}");
             sb.AppendLine();
             sb.AppendLine($"Descripción: {transaccion.Descripcion}");
             sb.AppendLine();
@@ -604,9 +599,7 @@ namespace SistemaBancaEnLinea.BW
                 MontoTotalPagos = transacciones
                     .Where(t => t.Estado == "Exitosa" && t.Tipo == "PagoServicio")
                     .Sum(t => t.Monto),
-                ComisionesTotales = transacciones
-                    .Where(t => t.Estado == "Exitosa")
-                    .Sum(t => t.Comision)
+                ComisionesTotales = 0
             };
         }
 

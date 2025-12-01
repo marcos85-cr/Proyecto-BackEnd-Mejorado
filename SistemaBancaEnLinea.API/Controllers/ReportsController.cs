@@ -184,7 +184,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 {
                     totalTransacciones = transacciones.Count,
                     montoTotal = transacciones.Where(t => t.Estado == "Exitosa").Sum(t => t.Monto),
-                    comisionesTotal = transacciones.Where(t => t.Estado == "Exitosa").Sum(t => t.Comision),
+                    comisionesTotal = 0,
                     porTipo = transacciones.GroupBy(t => t.Tipo).Select(g => new
                     {
                         tipo = g.Key,
@@ -213,7 +213,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                             clienteNombre = t.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
                             monto = t.Monto,
                             moneda = t.Moneda,
-                            comision = t.Comision,
+                            comision = 0,
                             estado = t.Estado,
                             referencia = t.ComprobanteReferencia
                         }).OrderByDescending(t => t.fecha)

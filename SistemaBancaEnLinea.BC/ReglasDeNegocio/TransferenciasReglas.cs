@@ -32,10 +32,7 @@
         // Tipos de transacción
         public static readonly string[] TIPOS_TRANSACCION = { "Transferencia", "PagoServicio" };
 
-        // RF-D3: Comisiones por tipo de transferencia
-        public const decimal COMISION_TRANSFERENCIA_PROPIA = 0; // Sin comisión
-        public const decimal COMISION_TRANSFERENCIA_TERCERO = 500; // 500 CRC
-
+  
         public static bool RequiereAprobacion(decimal monto)
         {
             return monto > UMBRAL_APROBACION;
@@ -46,14 +43,9 @@
             return monto > 0 && monto >= MONTO_MINIMO;
         }
 
-        public static decimal CalcularComision(bool esTransferenciaPropia)
+        public static bool ExcedeTransferenciasSaldo(decimal saldo, decimal monto)
         {
-            return esTransferenciaPropia ? COMISION_TRANSFERENCIA_PROPIA : COMISION_TRANSFERENCIA_TERCERO;
-        }
-
-        public static bool ExcedeTransferenciasSaldo(decimal saldo, decimal monto, decimal comision)
-        {
-            return (monto + comision) > saldo;
+            return monto > saldo;
         }
 
         public static bool ExcedeLimiteDiario(decimal montoTransferidoHoy, decimal montoNuevo)
