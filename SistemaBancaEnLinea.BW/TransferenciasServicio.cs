@@ -153,11 +153,15 @@ namespace SistemaBancaEnLinea.BW
                 throw new InvalidOperationException(string.Join(", ", preCheck.Errores));
             }
 
+            // Transacción manual con rollback robusto
             using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
             {
+                // Obtener cuenta origen dentro de la transacción para consistencia
                 var cuentaOrigen = await _cuentaAcciones.ObtenerPorIdAsync(request.CuentaOrigenId);
+                if (cuentaOrigen == null)
+                    throw new InvalidOperationException("Cuenta origen no encontrada.");
 
                 // Determinar estado inicial
                 string estadoInicial;
@@ -194,10 +198,17 @@ namespace SistemaBancaEnLinea.BW
                     ComprobanteReferencia = GenerarReferenciaComprobante()
                 };
 
+                var transaccionCreada = await _transaccionAcciones.CrearAsync(transaccion);
+
                 // Solo actualizar saldos si es ejecución inmediata
                 if (estadoInicial == "Exitosa")
                 {
-                    cuentaOrigen!.Saldo -= request.Monto;
+                    // Validar saldo actualizado por si alguien más modificó la cuenta
+                    if (cuentaOrigen.Saldo < request.Monto)
+                        throw new InvalidOperationException("Saldo insuficiente en el momento de la ejecución.");
+
+                    // Actualizar cuenta origen
+                    cuentaOrigen.Saldo -= request.Monto;
                     await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
 
                     // Acreditar cuenta destino (si es interna)
@@ -211,10 +222,10 @@ namespace SistemaBancaEnLinea.BW
                         }
                     }
 
-                    transaccion.FechaEjecucion = DateTime.UtcNow;
+                    // Actualizar fechas de ejecución
+                    transaccionCreada.FechaEjecucion = DateTime.UtcNow;
+                    await _transaccionAcciones.ActualizarAsync(transaccionCreada);
                 }
-
-                var transaccionCreada = await _transaccionAcciones.CrearAsync(transaccion);
 
                 // Si es programada, crear registro de programación
                 if (request.Programada && request.FechaProgramada.HasValue)
@@ -229,23 +240,42 @@ namespace SistemaBancaEnLinea.BW
                     await _programacionAcciones.CrearAsync(programacion);
                 }
 
+                // Confirmar la transacción solo si todo fue exitoso
                 await transaction.CommitAsync();
 
-                // Auditoría
-                await _auditoriaAcciones.RegistrarAsync(
-                    request.ClienteId,
-                    "Transferencia",
-                    $"Transferencia de {request.Monto} {request.Moneda} desde cuenta {cuentaOrigen!.Numero}. Estado: {estadoInicial}"
-                );
+                // Auditoría (fuera de la transacción para no afectar el rollback si falla)
+                try
+                {
+                    await _auditoriaAcciones.RegistrarAsync(
+                        request.ClienteId,
+                        "Transferencia",
+                        $"Transferencia de {request.Monto} {request.Moneda} desde cuenta {cuentaOrigen.Numero}. Estado: {estadoInicial}"
+                    );
+                }
+                catch (Exception auditEx)
+                {
+                    _logger.LogWarning($"Error registrando auditoría pero transacción fue exitosa: {auditEx.Message}");
+                }
 
                 _logger.LogInformation($"Transferencia {transaccionCreada.Id} creada con estado {estadoInicial}");
                 return transaccionCreada;
             }
             catch (Exception ex)
             {
-                await transaction.RollbackAsync();
+                // Intentar rollback con manejo de errores
+                try
+                {
+                    await transaction.RollbackAsync();
+                    _logger.LogWarning($"Transacción revertida debido a error: {ex.Message}");
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError($"Error crítico haciendo rollback: {rollbackEx.Message}");
+                    // En caso de error de rollback, igual lanzamos la excepción original
+                }
+
                 _logger.LogError($"Error ejecutando transferencia: {ex.Message}");
-                throw;
+                throw new InvalidOperationException($"Error en transferencia: {ex.Message}", ex);
             }
         }
 
@@ -289,6 +319,7 @@ namespace SistemaBancaEnLinea.BW
             if (transaccion.ClienteId == 0)
                 throw new InvalidOperationException("La operación requiere validación previa del cliente.");
 
+            // Transacción manual con rollback robusto para aprobación
             using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
@@ -300,9 +331,11 @@ namespace SistemaBancaEnLinea.BW
                 if (cuentaOrigen!.Saldo < transaccion.Monto)
                     throw new InvalidOperationException("Saldo insuficiente en la cuenta origen.");
 
+                // Actualizar cuenta origen
                 cuentaOrigen.Saldo -= transaccion.Monto;
                 await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
 
+                // Acreditar cuenta destino
                 if (transaccion.CuentaDestinoId.HasValue)
                 {
                     var cuentaDestino = await _cuentaAcciones.ObtenerPorIdAsync(transaccion.CuentaDestinoId.Value);
@@ -313,26 +346,47 @@ namespace SistemaBancaEnLinea.BW
                     }
                 }
 
+                // Actualizar estado de transacción
                 transaccion.Estado = "Exitosa";
                 transaccion.FechaEjecucion = DateTime.UtcNow;
                 transaccion.SaldoPosterior = cuentaOrigen.Saldo;
                 await _transaccionAcciones.ActualizarAsync(transaccion);
 
+                // Confirmar la transacción solo si todo fue exitoso
                 await transaction.CommitAsync();
 
-                await _auditoriaAcciones.RegistrarAsync(
-                    aprobadorId,
-                    "AprobacionTransferencia",
-                    $"Transferencia {transaccionId} aprobada por usuario {aprobadorId}"
-                );
+                // Auditoría (fuera de la transacción)
+                try
+                {
+                    await _auditoriaAcciones.RegistrarAsync(
+                        aprobadorId,
+                        "AprobacionTransferencia",
+                        $"Transferencia {transaccionId} aprobada por usuario {aprobadorId}"
+                    );
+                }
+                catch (Exception auditEx)
+                {
+                    _logger.LogWarning($"Error registrando auditoría pero aprobación fue exitosa: {auditEx.Message}");
+                }
 
                 _logger.LogInformation($"Transacción {transaccionId} aprobada por {aprobadorId}");
                 return transaccion;
             }
-            catch
+            catch (Exception ex)
             {
-                await transaction.RollbackAsync();
-                throw;
+                // Intentar rollback con manejo de errores
+                try
+                {
+                    await transaction.RollbackAsync();
+                    _logger.LogWarning($"Transacción de aprobación revertida debido a error: {ex.Message}");
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError($"Error crítico haciendo rollback de aprobación: {rollbackEx.Message}");
+                }
+
+                _logger.LogError($"Error aprobando transacción {transaccionId}: {ex.Message}");
+                throw new InvalidOperationException($"Error aprobando transferencia: {ex.Message}", ex);
             }
         }
 

@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
 using SistemaBancaEnLinea.BC.ReglasDeNegocio;
@@ -22,14 +23,16 @@ namespace SistemaBancaEnLinea.BW
     {
         private readonly BancaContext _context;
         private readonly IConfiguration _configuration;
+        private readonly ILogger<UsuarioServicio> _logger;
 
         // Configuración JWT
         private const int TOKEN_EXPIRATION_SECONDS = 60000;
 
-        public UsuarioServicio(BancaContext context, IConfiguration configuration)
+        public UsuarioServicio(BancaContext context, IConfiguration configuration, ILogger<UsuarioServicio> logger)
         {
             _context = context;
             _configuration = configuration;
+            _logger = logger;
         }
 
         #region Autenticación
@@ -137,58 +140,65 @@ namespace SistemaBancaEnLinea.BW
             if (await ExisteEmailAsync(request.Email))
                 return ResultadoOperacion<Usuario>.Fallo("El correo electrónico ya está registrado.");
 
-            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
-            var strategy = _context.Database.CreateExecutionStrategy();
+            // Transacción manual con rollback robusto para creación de usuario
+            using var transaction = await _context.Database.BeginTransactionAsync();
 
-            return await strategy.ExecuteAsync(async () =>
+            try
             {
-                using var transaction = await _context.Database.BeginTransactionAsync();
-
-                try
+                // Crear usuario
+                var usuario = new Usuario
                 {
-                    // Crear usuario
-                    var usuario = new Usuario
-                    {
-                        Email = request.Email,
-                        PasswordHash = HashPassword(request.Password!),
-                        Rol = request.Role,
-                        Nombre = request.Nombre ?? request.Email,
-                        Identificacion = request.Identificacion,
-                        Telefono = request.Telefono,
-                        IntentosFallidos = 0,
-                        EstaBloqueado = false,
-                        FechaCreacion = DateTime.UtcNow
-                    };
+                    Email = request.Email,
+                    PasswordHash = HashPassword(request.Password!),
+                    Rol = request.Role,
+                    Nombre = request.Nombre ?? request.Email,
+                    Identificacion = request.Identificacion,
+                    Telefono = request.Telefono,
+                    IntentosFallidos = 0,
+                    EstaBloqueado = false,
+                    FechaCreacion = DateTime.UtcNow
+                };
 
-                    _context.Usuarios.Add(usuario);
+                _context.Usuarios.Add(usuario);
+                await _context.SaveChangesAsync();
+
+                // Si es rol Cliente, crear un Cliente asociado
+                if (request.Role == "Cliente")
+                {
+                    var cliente = new Cliente
+                    {
+                        Estado = "Activo",
+                        FechaRegistro = DateTime.UtcNow,
+                        UsuarioAsociado = usuario
+                    };
+                    _context.Clientes.Add(cliente);
                     await _context.SaveChangesAsync();
 
-                    // Si es rol Cliente, crear un Cliente asociado
-                    if (request.Role == "Cliente")
-                    {
-                        var cliente = new Cliente
-                        {
-                            Estado = "Activo",
-                            FechaRegistro = DateTime.UtcNow,
-                            UsuarioAsociado = usuario
-                        };
-                        _context.Clientes.Add(cliente);
-                        await _context.SaveChangesAsync();
-
-                        usuario.ClienteId = cliente.Id;
-                        await _context.SaveChangesAsync();
-                    }
-
-                    await transaction.CommitAsync();
-                    return ResultadoOperacion<Usuario>.Exito(usuario);
+                    usuario.ClienteId = cliente.Id;
+                    await _context.SaveChangesAsync();
                 }
-                catch (Exception ex)
+
+                // Confirmar la transacción solo si todo fue exitoso
+                await transaction.CommitAsync();
+
+                return ResultadoOperacion<Usuario>.Exito(usuario);
+            }
+            catch (Exception ex)
+            {
+                // Intentar rollback con manejo de errores
+                try
                 {
                     await transaction.RollbackAsync();
-                    var innerMessage = ex.InnerException?.Message ?? ex.Message;
-                    return ResultadoOperacion<Usuario>.Fallo($"Error al crear usuario: {innerMessage}");
+                    _logger.LogWarning($"Transacción de usuario revertida debido a error: {ex.Message}");
                 }
-            });
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError($"Error crítico haciendo rollback de usuario: {rollbackEx.Message}");
+                }
+
+                var innerMessage = ex.InnerException?.Message ?? ex.Message;
+                return ResultadoOperacion<Usuario>.Fallo($"Error al crear usuario: {innerMessage}");
+            }
         }
 
         /// <summary>

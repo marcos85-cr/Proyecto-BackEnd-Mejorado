@@ -1,4 +1,5 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
 using SistemaBancaEnLinea.BC.ReglasDeNegocio;
@@ -14,15 +15,18 @@ namespace SistemaBancaEnLinea.BW
         private readonly ClienteAcciones _clienteAcciones;
         private readonly AuditoriaAcciones _auditoriaAcciones;
         private readonly BancaContext _context;
+        private readonly ILogger<ClienteServicio> _logger;
 
         public ClienteServicio(
             ClienteAcciones clienteAcciones,
             AuditoriaAcciones auditoriaAcciones,
-            BancaContext context)
+            BancaContext context,
+            ILogger<ClienteServicio> logger)
         {
             _clienteAcciones = clienteAcciones;
             _auditoriaAcciones = auditoriaAcciones;
             _context = context;
+            _logger = logger;
         }
 
         /// <summary>
@@ -73,84 +77,96 @@ namespace SistemaBancaEnLinea.BW
                 }
             }
 
-            // Usar ExecutionStrategy para compatibilidad con SqlServerRetryingExecutionStrategy
-            var strategy = _context.Database.CreateExecutionStrategy();
-            
-            return await strategy.ExecuteAsync(async () =>
-            {
-                using var transaction = await _context.Database.BeginTransactionAsync();
-                
-                try
-                {
-                    // Re-obtener usuario dentro de la transacción
-                    var usuarioTx = await _context.Usuarios.FindAsync(request.UsuarioId);
-                    if (usuarioTx == null)
-                        return ResultadoOperacion<Cliente>.Fallo("El usuario especificado no existe.");
+            // Transacción manual con rollback robusto para creación de cliente
+            using var transaction = await _context.Database.BeginTransactionAsync();
 
-                    // 1. Crear cliente
-                    var cliente = new Cliente
+            try
+            {
+                // Re-obtener usuario dentro de la transacción
+                var usuarioTx = await _context.Usuarios.FindAsync(request.UsuarioId);
+                if (usuarioTx == null)
+                    return ResultadoOperacion<Cliente>.Fallo("El usuario especificado no existe.");
+
+                // 1. Crear cliente
+                var cliente = new Cliente
+                {
+                    Direccion = request.Direccion,
+                    FechaNacimiento = request.FechaNacimiento,
+                    Estado = ESTADO_CLIENTE_ACTIVO,
+                    FechaRegistro = DateTime.UtcNow,
+                    GestorAsignadoId = request.GestorId
+                };
+
+                _context.Clientes.Add(cliente);
+                await _context.SaveChangesAsync();
+
+                // 2. Vincular usuario al cliente
+                usuarioTx.ClienteId = cliente.Id;
+                await _context.SaveChangesAsync();
+
+                // 3. Crear cuentas
+                var cuentasCreadas = new List<Cuenta>();
+                foreach (var cuentaRequest in cuentasValidas)
+                {
+                    var cuenta = new Cuenta
                     {
-                        Direccion = request.Direccion,
-                        FechaNacimiento = request.FechaNacimiento,
-                        Estado = ESTADO_CLIENTE_ACTIVO,
-                        FechaRegistro = DateTime.UtcNow,
-                        GestorAsignadoId = request.GestorId
+                        Numero = GenerarNumeroCuenta(),
+                        Tipo = NormalizarTipoCuenta(cuentaRequest.Tipo),
+                        Moneda = cuentaRequest.Moneda.ToUpperInvariant(),
+                        Saldo = cuentaRequest.SaldoInicial,
+                        Estado = ESTADO_CUENTA_ACTIVA,
+                        FechaApertura = DateTime.UtcNow,
+                        ClienteId = cliente.Id
                     };
 
-                    _context.Clientes.Add(cliente);
+                    _context.Cuentas.Add(cuenta);
+                    cuentasCreadas.Add(cuenta);
+                }
+
+                if (cuentasCreadas.Count > 0)
                     await _context.SaveChangesAsync();
 
-                    // 2. Vincular usuario al cliente
-                    usuarioTx.ClienteId = cliente.Id;
-                    await _context.SaveChangesAsync();
+                // Confirmar la transacción solo si todo fue exitoso
+                await transaction.CommitAsync();
 
-                    // 3. Crear cuentas
-                    var cuentasCreadas = new List<Cuenta>();
-                    foreach (var cuentaRequest in cuentasValidas)
-                    {
-                        var cuenta = new Cuenta
-                        {
-                            Numero = GenerarNumeroCuenta(),
-                            Tipo = NormalizarTipoCuenta(cuentaRequest.Tipo),
-                            Moneda = cuentaRequest.Moneda.ToUpperInvariant(),
-                            Saldo = cuentaRequest.SaldoInicial,
-                            Estado = ESTADO_CUENTA_ACTIVA,
-                            FechaApertura = DateTime.UtcNow,
-                            ClienteId = cliente.Id
-                        };
-                        
-                        _context.Cuentas.Add(cuenta);
-                        cuentasCreadas.Add(cuenta);
-                    }
-                    
-                    if (cuentasCreadas.Count > 0)
-                        await _context.SaveChangesAsync();
-
-                    // 4. Registrar auditoría
+                // Auditoría (fuera de la transacción para no afectar rollback si falla)
+                try
+                {
                     await _auditoriaAcciones.RegistrarAsync(
                         request.UsuarioId,
                         "CreacionCliente",
                         $"Cliente creado para usuario {usuarioTx.Nombre} con {cuentasCreadas.Count} cuentas. Gestor: {request.GestorId}"
                     );
-
-                    // Commit de la transacción
-                    await transaction.CommitAsync();
-
-                    // Cargar relaciones para respuesta
-                    await _context.Entry(cliente).Reference(c => c.GestorAsignado).LoadAsync();
-                    await _context.Entry(cliente).Reference(c => c.UsuarioAsociado).LoadAsync();
-                    cliente.Cuentas = cuentasCreadas;
-
-                    return ResultadoOperacion<Cliente>.Exito(cliente);
                 }
-                catch (Exception ex)
+                catch (Exception auditEx)
+                {
+                    _logger.LogWarning($"Error registrando auditoría pero cliente fue creado: {auditEx.Message}");
+                }
+
+                // Cargar relaciones para respuesta
+                await _context.Entry(cliente).Reference(c => c.GestorAsignado).LoadAsync();
+                await _context.Entry(cliente).Reference(c => c.UsuarioAsociado).LoadAsync();
+                cliente.Cuentas = cuentasCreadas;
+
+                return ResultadoOperacion<Cliente>.Exito(cliente);
+            }
+            catch (Exception ex)
+            {
+                // Intentar rollback con manejo de errores
+                try
                 {
                     await transaction.RollbackAsync();
-                    // Capturar el error interno para más detalle
-                    var innerMessage = ex.InnerException?.Message ?? ex.Message;
-                    return ResultadoOperacion<Cliente>.Fallo($"Error al crear cliente: {innerMessage}");
+                    _logger.LogWarning($"Transacción de cliente revertida debido a error: {ex.Message}");
                 }
-            });
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError($"Error crítico haciendo rollback de cliente: {rollbackEx.Message}");
+                }
+
+                // Capturar el error interno para más detalle
+                var innerMessage = ex.InnerException?.Message ?? ex.Message;
+                return ResultadoOperacion<Cliente>.Fallo($"Error al crear cliente: {innerMessage}");
+            }
         }
 
         private static string GenerarNumeroCuenta()
@@ -231,78 +247,93 @@ namespace SistemaBancaEnLinea.BW
                 }
             }
 
-            var strategy = _context.Database.CreateExecutionStrategy();
+            // Transacción manual con rollback robusto para actualización de cliente
+            using var transaction = await _context.Database.BeginTransactionAsync();
 
-            return await strategy.ExecuteAsync(async () =>
+            try
             {
-                using var transaction = await _context.Database.BeginTransactionAsync();
+                // Re-obtener cliente dentro de la transacción
+                var clienteTx = await _context.Clientes
+                    .Include(c => c.UsuarioAsociado)
+                    .FirstOrDefaultAsync(c => c.Id == id);
 
-                try
+                if (clienteTx == null)
+                    return ResultadoOperacion<Cliente>.Fallo("Cliente no encontrado.");
+
+                // Actualizar campos únicos del cliente
+                if (request.Direccion != null)
+                    clienteTx.Direccion = request.Direccion;
+
+                if (request.FechaNacimiento.HasValue)
+                    clienteTx.FechaNacimiento = request.FechaNacimiento;
+
+                // Cambiar gestor si se proporciona
+                if (request.GestorId.HasValue && request.GestorId != clienteTx.GestorAsignadoId)
+                    clienteTx.GestorAsignadoId = request.GestorId;
+
+                await _context.SaveChangesAsync();
+
+                // Crear nuevas cuentas si se proporcionan (solo crea, no actualiza existentes)
+                if (request.Cuentas != null && request.Cuentas.Any())
                 {
-                    // Re-obtener cliente dentro de la transacción
-                    var clienteTx = await _context.Clientes
-                        .Include(c => c.UsuarioAsociado)
-                        .FirstOrDefaultAsync(c => c.Id == id);
-                    
-                    if (clienteTx == null)
-                        return ResultadoOperacion<Cliente>.Fallo("Cliente no encontrado.");
-
-                    // Actualizar campos únicos del cliente
-                    if (request.Direccion != null)
-                        clienteTx.Direccion = request.Direccion;
-
-                    if (request.FechaNacimiento.HasValue)
-                        clienteTx.FechaNacimiento = request.FechaNacimiento;
-
-                    // Cambiar gestor si se proporciona
-                    if (request.GestorId.HasValue && request.GestorId != clienteTx.GestorAsignadoId)
-                        clienteTx.GestorAsignadoId = request.GestorId;
-
-                    await _context.SaveChangesAsync();
-
-                    // Crear nuevas cuentas si se proporcionan (solo crea, no actualiza existentes)
-                    if (request.Cuentas != null && request.Cuentas.Any())
+                    foreach (var cuentaReq in request.Cuentas)
                     {
-                        foreach (var cuentaReq in request.Cuentas)
+                        var nuevaCuenta = new Cuenta
                         {
-                            var nuevaCuenta = new Cuenta
-                            {
-                                Numero = GenerarNumeroCuenta(),
-                                Tipo = NormalizarTipoCuenta(cuentaReq.Tipo),
-                                Moneda = cuentaReq.Moneda.ToUpperInvariant(),
-                                Saldo = cuentaReq.SaldoInicial,
-                                Estado = ESTADO_CUENTA_ACTIVA,
-                                ClienteId = clienteTx.Id,
-                                FechaApertura = DateTime.UtcNow
-                            };
+                            Numero = GenerarNumeroCuenta(),
+                            Tipo = NormalizarTipoCuenta(cuentaReq.Tipo),
+                            Moneda = cuentaReq.Moneda.ToUpperInvariant(),
+                            Saldo = cuentaReq.SaldoInicial,
+                            Estado = ESTADO_CUENTA_ACTIVA,
+                            ClienteId = clienteTx.Id,
+                            FechaApertura = DateTime.UtcNow
+                        };
 
-                            _context.Cuentas.Add(nuevaCuenta);
-                        }
-
-                        await _context.SaveChangesAsync();
+                        _context.Cuentas.Add(nuevaCuenta);
                     }
 
+                    await _context.SaveChangesAsync();
+                }
+
+                // Confirmar la transacción solo si todo fue exitoso
+                await transaction.CommitAsync();
+
+                // Auditoría (fuera de la transacción para no afectar rollback si falla)
+                try
+                {
                     await _auditoriaAcciones.RegistrarAsync(
                         clienteTx.UsuarioAsociado?.Id ?? 0,
                         "ActualizacionCliente",
                         $"Cliente {clienteTx.Id} actualizado"
                     );
-
-                    await transaction.CommitAsync();
-
-                    // Recargar con relaciones
-                    await _context.Entry(clienteTx).Reference(c => c.GestorAsignado).LoadAsync();
-                    await _context.Entry(clienteTx).Collection(c => c.Cuentas!).LoadAsync();
-
-                    return ResultadoOperacion<Cliente>.Exito(clienteTx);
                 }
-                catch (Exception ex)
+                catch (Exception auditEx)
+                {
+                    _logger.LogWarning($"Error registrando auditoría pero cliente fue actualizado: {auditEx.Message}");
+                }
+
+                // Recargar con relaciones
+                await _context.Entry(clienteTx).Reference(c => c.GestorAsignado).LoadAsync();
+                await _context.Entry(clienteTx).Collection(c => c.Cuentas!).LoadAsync();
+
+                return ResultadoOperacion<Cliente>.Exito(clienteTx);
+            }
+            catch (Exception ex)
+            {
+                // Intentar rollback con manejo de errores
+                try
                 {
                     await transaction.RollbackAsync();
-                    var innerMessage = ex.InnerException?.Message ?? ex.Message;
-                    return ResultadoOperacion<Cliente>.Fallo($"Error al actualizar cliente: {innerMessage}");
+                    _logger.LogWarning($"Transacción de actualización de cliente revertida debido a error: {ex.Message}");
                 }
-            });
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError($"Error crítico haciendo rollback de actualización de cliente: {rollbackEx.Message}");
+                }
+
+                var innerMessage = ex.InnerException?.Message ?? ex.Message;
+                return ResultadoOperacion<Cliente>.Fallo($"Error al actualizar cliente: {innerMessage}");
+            }
         }
 
         /// <summary>
@@ -318,47 +349,63 @@ namespace SistemaBancaEnLinea.BW
             if (cliente.Cuentas?.Any(c => c.Estado == "Activa") == true)
                 return ResultadoOperacion<bool>.Fallo("No se puede eliminar un cliente con cuentas activas.");
 
-            var strategy = _context.Database.CreateExecutionStrategy();
+            // Transacción manual con rollback robusto para eliminación de cliente
+            using var transaction = await _context.Database.BeginTransactionAsync();
 
-            return await strategy.ExecuteAsync(async () =>
+            try
             {
-                using var transaction = await _context.Database.BeginTransactionAsync();
+                var clienteTx = await _context.Clientes
+                    .Include(c => c.UsuarioAsociado)
+                    .FirstOrDefaultAsync(c => c.Id == id);
 
+                if (clienteTx == null)
+                    return ResultadoOperacion<bool>.Fallo("Cliente no encontrado.");
+
+                // Desvincular usuario si existe
+                if (clienteTx.UsuarioAsociado != null)
+                {
+                    clienteTx.UsuarioAsociado.ClienteId = null;
+                    await _context.SaveChangesAsync();
+                }
+
+                _context.Clientes.Remove(clienteTx);
+                await _context.SaveChangesAsync();
+
+                // Confirmar la transacción solo si todo fue exitoso
+                await transaction.CommitAsync();
+
+                // Auditoría (fuera de la transacción para no afectar rollback si falla)
                 try
                 {
-                    var clienteTx = await _context.Clientes
-                        .Include(c => c.UsuarioAsociado)
-                        .FirstOrDefaultAsync(c => c.Id == id);
-                    
-                    if (clienteTx == null)
-                        return ResultadoOperacion<bool>.Fallo("Cliente no encontrado.");
-
-                    // Desvincular usuario si existe
-                    if (clienteTx.UsuarioAsociado != null)
-                    {
-                        clienteTx.UsuarioAsociado.ClienteId = null;
-                        await _context.SaveChangesAsync();
-                    }
-
-                    _context.Clientes.Remove(clienteTx);
-                    await _context.SaveChangesAsync();
-
                     await _auditoriaAcciones.RegistrarAsync(
                         0,
                         "EliminacionCliente",
                         $"Cliente {id} eliminado"
                     );
-
-                    await transaction.CommitAsync();
-                    return ResultadoOperacion<bool>.Exito(true);
                 }
-                catch (Exception ex)
+                catch (Exception auditEx)
+                {
+                    _logger.LogWarning($"Error registrando auditoría pero cliente fue eliminado: {auditEx.Message}");
+                }
+
+                return ResultadoOperacion<bool>.Exito(true);
+            }
+            catch (Exception ex)
+            {
+                // Intentar rollback con manejo de errores
+                try
                 {
                     await transaction.RollbackAsync();
-                    var innerMessage = ex.InnerException?.Message ?? ex.Message;
-                    return ResultadoOperacion<bool>.Fallo($"Error al eliminar cliente: {innerMessage}");
+                    _logger.LogWarning($"Transacción de eliminación de cliente revertida debido a error: {ex.Message}");
                 }
-            });
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError($"Error crítico haciendo rollback de eliminación de cliente: {rollbackEx.Message}");
+                }
+
+                var innerMessage = ex.InnerException?.Message ?? ex.Message;
+                return ResultadoOperacion<bool>.Fallo($"Error al eliminar cliente: {innerMessage}");
+            }
         }
 
         public async Task<bool> ExisteIdentificacionAsync(string identificacion)

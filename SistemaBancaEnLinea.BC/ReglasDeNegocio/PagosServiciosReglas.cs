@@ -13,8 +13,7 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
         public const int LONGITUD_MAXIMA_NOMBRE_PROVEEDOR = 200;
         public const int LONGITUD_MINIMA_CONTRATO = 5;
         public const int LONGITUD_MAXIMA_CONTRATO = 50;
-        public const decimal COMISION_PAGO_SERVICIO = 1000; // 1000 CRC
-
+    
         public static bool ValidarNombreProveedor(string nombre) =>
             !string.IsNullOrWhiteSpace(nombre) &&
             nombre.Length >= LONGITUD_MINIMA_NOMBRE_PROVEEDOR &&
@@ -39,6 +38,6 @@ namespace SistemaBancaEnLinea.BC.ReglasDeNegocio
             }
         }
 
-        public static decimal ObtenerComision() => COMISION_PAGO_SERVICIO;
+        public static decimal ObtenerComision() => 0;
     }
 }

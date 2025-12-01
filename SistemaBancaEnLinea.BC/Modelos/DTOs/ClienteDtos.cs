@@ -2,19 +2,50 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
 {
     // ==================== CUENTA ====================
     
-    public record CuentaListaDto(
-        int Id,
-        string Numero,
-        string Tipo,
-        string Moneda,
-        decimal Saldo,
-        string Estado,
-        DateTime? FechaApertura,
-        string? Titular = null,
-        int? ClienteId = null,
-        decimal LimiteDiario = 500000m,
-        decimal? SaldoDisponible = null
-    );
+    public class CuentaListaDto
+    {
+        public int Id { get; set; }
+        public string Numero { get; set; } = string.Empty;
+        public string Tipo { get; set; } = string.Empty;
+        public string Moneda { get; set; } = string.Empty;
+        public decimal Saldo { get; set; }
+        public string Estado { get; set; } = string.Empty;
+        public DateTime? FechaApertura { get; set; }
+        public string? Titular { get; set; }
+        public int? ClienteId { get; set; }
+        public decimal LimiteDiario { get; set; } = 500000m;
+        public decimal? SaldoDisponible { get; set; }
+
+        // Parameterless constructor for AutoMapper
+        public CuentaListaDto() { }
+
+        // Optional: Constructor for manual creation
+        public CuentaListaDto(
+            int id,
+            string numero,
+            string tipo,
+            string moneda,
+            decimal saldo,
+            string estado,
+            DateTime? fechaApertura,
+            string? titular = null,
+            int? clienteId = null,
+            decimal limiteDiario = 500000m,
+            decimal? saldoDisponible = null)
+        {
+            Id = id;
+            Numero = numero;
+            Tipo = tipo;
+            Moneda = moneda;
+            Saldo = saldo;
+            Estado = estado;
+            FechaApertura = fechaApertura;
+            Titular = titular;
+            ClienteId = clienteId;
+            LimiteDiario = limiteDiario;
+            SaldoDisponible = saldoDisponible;
+        }
+    }
 
     public record CuentaDetalleDto(
         int Id,
@@ -31,18 +62,47 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
     /// <summary>
     /// DTO completo de cuenta con todas sus relaciones
     /// </summary>
-    public record CuentaCompletaDto(
-        int Id,
-        string Numero,
-        string Tipo,
-        string Moneda,
-        decimal Saldo,
-        string Estado,
-        DateTime? FechaApertura,
-        CuentaRelacionClienteDto? Cliente,
-        CuentaRelacionUsuarioDto? Usuario,
-        CuentaRelacionGestorDto? Gestor
-    );
+    public class CuentaCompletaDto
+    {
+        public int Id { get; set; }
+        public string Numero { get; set; } = string.Empty;
+        public string Tipo { get; set; } = string.Empty;
+        public string Moneda { get; set; } = string.Empty;
+        public decimal Saldo { get; set; }
+        public string Estado { get; set; } = string.Empty;
+        public DateTime? FechaApertura { get; set; }
+        public CuentaRelacionClienteDto? Cliente { get; set; }
+        public CuentaRelacionUsuarioDto? Usuario { get; set; }
+        public CuentaRelacionGestorDto? Gestor { get; set; }
+
+        // Parameterless constructor for AutoMapper
+        public CuentaCompletaDto() { }
+
+        // Optional: Constructor for manual creation
+        public CuentaCompletaDto(
+            int id,
+            string numero,
+            string tipo,
+            string moneda,
+            decimal saldo,
+            string estado,
+            DateTime? fechaApertura,
+            CuentaRelacionClienteDto? cliente,
+            CuentaRelacionUsuarioDto? usuario,
+            CuentaRelacionGestorDto? gestor)
+        {
+            Id = id;
+            Numero = numero;
+            Tipo = tipo;
+            Moneda = moneda;
+            Saldo = saldo;
+            Estado = estado;
+            FechaApertura = fechaApertura;
+            Cliente = cliente;
+            Usuario = usuario;
+            Gestor = gestor;
+        }
+    }
 
     public record CuentaRelacionClienteDto(
         int Id,
@@ -73,20 +133,47 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
         decimal SaldoInicial = 0
     );
 
-    public record CuentaCreacionDto(
-        int Id,
-        string Numero,
-        string Tipo,
-        string Moneda,
-        decimal Saldo,
-        string Estado
-    );
+    public class CuentaCreacionDto
+    {
+        public int Id { get; set; }
+        public string Numero { get; set; } = string.Empty;
+        public string Tipo { get; set; } = string.Empty;
+        public string Moneda { get; set; } = string.Empty;
+        public decimal Saldo { get; set; }
+        public string Estado { get; set; } = string.Empty;
 
-    public record CuentaBalanceDto(
-        decimal Saldo,
-        decimal Disponible,
-        string Moneda
-    );
+        // Parameterless constructor for AutoMapper
+        public CuentaCreacionDto() { }
+
+        // Optional: Constructor for manual creation
+        public CuentaCreacionDto(int id, string numero, string tipo, string moneda, decimal saldo, string estado)
+        {
+            Id = id;
+            Numero = numero;
+            Tipo = tipo;
+            Moneda = moneda;
+            Saldo = saldo;
+            Estado = estado;
+        }
+    }
+
+    public class CuentaBalanceDto
+    {
+        public decimal Saldo { get; set; }
+        public decimal Disponible { get; set; }
+        public string Moneda { get; set; } = string.Empty;
+
+        // Parameterless constructor for AutoMapper
+        public CuentaBalanceDto() { }
+
+        // Optional: Constructor for manual creation
+        public CuentaBalanceDto(decimal saldo, decimal disponible, string moneda)
+        {
+            Saldo = saldo;
+            Disponible = disponible;
+            Moneda = moneda;
+        }
+    }
 
     public record CuentaEstadoDto(
         int Id,

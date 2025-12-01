@@ -101,9 +101,7 @@ namespace SistemaBancaEnLinea.BW
                 throw new InvalidOperationException("Cuenta origen no disponible.");
             }
 
-            decimal montoTotal = transaccion.Monto + transaccion.Comision;
-
-            if (cuentaOrigen.Saldo < montoTotal)
+            if (cuentaOrigen.Saldo < transaccion.Monto)
             {
                 throw new InvalidOperationException("Saldo insuficiente.");
             }
@@ -113,7 +111,7 @@ namespace SistemaBancaEnLinea.BW
             try
             {
                 // Actualizar saldo cuenta origen
-                cuentaOrigen.Saldo -= montoTotal;
+                cuentaOrigen.Saldo -= transaccion.Monto;
                 await _cuentaAcciones.ActualizarAsync(cuentaOrigen);
 
                 // Si es transferencia, acreditar cuenta destino
@@ -138,18 +136,37 @@ namespace SistemaBancaEnLinea.BW
 
                 await dbTransaction.CommitAsync();
 
-                await _auditoriaAcciones.RegistrarAsync(
-                    transaccion.ClienteId,
-                    "EjecucionProgramacion",
-                    $"Programación {programacion.TransaccionId} ejecutada exitosamente"
-                );
+                // Auditoría fuera de la transacción para evitar rollback si falla el audit
+                try
+                {
+                    await _auditoriaAcciones.RegistrarAsync(
+                        transaccion.ClienteId,
+                        "EjecucionProgramacion",
+                        $"Programación {programacion.TransaccionId} ejecutada exitosamente"
+                    );
+                }
+                catch (Exception auditEx)
+                {
+                    _logger.LogWarning($"Error registrando auditoría pero programación fue exitosa: {auditEx.Message}");
+                }
 
                 _logger.LogInformation($"Programación {programacion.TransaccionId} ejecutada exitosamente");
             }
-            catch
+            catch (Exception ex)
             {
-                await dbTransaction.RollbackAsync();
-                throw;
+                // Intentar rollback con manejo de errores
+                try
+                {
+                    await dbTransaction.RollbackAsync();
+                    _logger.LogWarning($"Transacción de programación revertida debido a error: {ex.Message}");
+                }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError($"Error crítico haciendo rollback de programación: {rollbackEx.Message}");
+                }
+
+                _logger.LogError($"Error ejecutando programación: {ex.Message}");
+                throw new InvalidOperationException($"Error en ejecución de programación: {ex.Message}", ex);
             }
         }
     }

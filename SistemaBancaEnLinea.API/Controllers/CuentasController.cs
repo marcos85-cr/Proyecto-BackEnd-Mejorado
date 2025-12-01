@@ -50,7 +50,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo cuentas del cliente");
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -68,7 +68,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo todas las cuentas");
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -90,7 +90,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo cuenta {Id}", id);
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -128,7 +128,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creando cuenta");
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -202,7 +202,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error cerrando cuenta {Id}", id);
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -224,7 +224,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo balance de cuenta {Id}", id);
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -257,7 +257,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error eliminando cuenta {Id}", id);
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
