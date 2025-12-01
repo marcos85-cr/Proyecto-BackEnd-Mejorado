@@ -66,27 +66,48 @@ namespace SistemaBancaEnLinea.BC.Mapping
             // ==================== CLIENTE MAPPINGS ====================
             
             CreateMap<Cliente, ClienteListaDto>()
-                .ForCtorParam("UsuarioId", o => o.MapFrom(s => s.UsuarioAsociado != null ? s.UsuarioAsociado.Id : 0))
-                .ForCtorParam("Identificacion", o => o.MapFrom(s => s.UsuarioAsociado != null ? s.UsuarioAsociado.Identificacion : ""))
-                .ForCtorParam("NombreCompleto", o => o.MapFrom(s => s.UsuarioAsociado != null ? s.UsuarioAsociado.Nombre : ""))
-                .ForCtorParam("Telefono", o => o.MapFrom(s => s.UsuarioAsociado != null ? s.UsuarioAsociado.Telefono : null))
-                .ForCtorParam("Email", o => o.MapFrom(s => s.UsuarioAsociado != null ? s.UsuarioAsociado.Email : ""))
-                .ForCtorParam("CuentasActivas", o => o.MapFrom(s => s.Cuentas != null 
-                    ? s.Cuentas.Count(c => c.Estado == ConstantesGenerales.ESTADO_CUENTA_ACTIVA) : 0))
-                .ForCtorParam("GestorNombre", o => o.MapFrom(s => s.GestorAsignado != null 
-                    ? s.GestorAsignado.Nombre ?? s.GestorAsignado.Email : null));
+                .ConstructUsing(s => new ClienteListaDto(
+                    s.Id,
+                    s.UsuarioAsociado != null ? s.UsuarioAsociado.Id : 0,
+                    s.UsuarioAsociado != null ? s.UsuarioAsociado.Identificacion ?? "" : "",
+                    s.UsuarioAsociado != null ? s.UsuarioAsociado.Nombre ?? "" : "",
+                    s.UsuarioAsociado != null ? s.UsuarioAsociado.Telefono : null,
+                    s.UsuarioAsociado != null ? s.UsuarioAsociado.Email ?? "" : "",
+                    s.Direccion,
+                    s.FechaNacimiento,
+                    s.Estado,
+                    s.FechaRegistro,
+                    s.Cuentas != null ? s.Cuentas.Count(c => c.Estado == ConstantesGenerales.ESTADO_CUENTA_ACTIVA) : 0,
+                    s.GestorAsignadoId,
+                    s.GestorAsignado != null ? s.GestorAsignado.Nombre ?? s.GestorAsignado.Email : null
+                ));
 
             CreateMap<Cliente, ClienteActualizacionDto>()
-                .ForCtorParam("GestorNombre", o => o.MapFrom(s => s.GestorAsignado != null 
-                    ? s.GestorAsignado.Nombre ?? s.GestorAsignado.Email : null));
+                .ConstructUsing(s => new ClienteActualizacionDto(
+                    s.Id,
+                    s.Direccion,
+                    s.FechaNacimiento,
+                    s.GestorAsignadoId,
+                    s.GestorAsignado != null ? s.GestorAsignado.Nombre ?? s.GestorAsignado.Email : null
+                ));
 
             CreateMap<Cliente, ClienteCreacionDto>()
-                .ForCtorParam("UsuarioId", o => o.MapFrom(s => s.UsuarioAsociado != null ? s.UsuarioAsociado.Id : 0))
-                .ForCtorParam("Identificacion", o => o.MapFrom(s => s.UsuarioAsociado != null ? s.UsuarioAsociado.Identificacion : ""))
-                .ForCtorParam("NombreCompleto", o => o.MapFrom(s => s.UsuarioAsociado != null ? s.UsuarioAsociado.Nombre : ""))
-                .ForCtorParam("Telefono", o => o.MapFrom(s => s.UsuarioAsociado != null ? s.UsuarioAsociado.Telefono : null))
-                .ForCtorParam("Email", o => o.MapFrom(s => s.UsuarioAsociado != null ? s.UsuarioAsociado.Email : ""))
-                .ForCtorParam("Cuentas", o => o.MapFrom(s => s.Cuentas ?? new List<Cuenta>()));
+                .ConstructUsing((s, ctx) => new ClienteCreacionDto(
+                    s.Id,
+                    s.UsuarioAsociado != null ? s.UsuarioAsociado.Id : 0,
+                    s.UsuarioAsociado != null ? s.UsuarioAsociado.Identificacion ?? "" : "",
+                    s.UsuarioAsociado != null ? s.UsuarioAsociado.Nombre ?? "" : "",
+                    s.UsuarioAsociado != null ? s.UsuarioAsociado.Telefono : null,
+                    s.UsuarioAsociado != null ? s.UsuarioAsociado.Email ?? "" : "",
+                    s.Direccion,
+                    s.FechaNacimiento,
+                    s.Estado,
+                    s.FechaRegistro,
+                    s.GestorAsignadoId,
+                    s.Cuentas != null 
+                        ? s.Cuentas.Select(c => new CuentaCreadaDto(c.Id, c.Numero, c.Tipo, c.Moneda, c.Saldo, c.Estado)).ToList() 
+                        : new List<CuentaCreadaDto>()
+                ));
 
             CreateMap<Usuario, UsuarioVinculadoDto>();
             
@@ -95,110 +116,217 @@ namespace SistemaBancaEnLinea.BC.Mapping
             // ==================== USUARIO MAPPINGS ====================
 
             CreateMap<Usuario, UsuarioListaDto>()
-                .ForCtorParam("Bloqueado", o => o.MapFrom(s => s.EstaBloqueado))
-                .ForCtorParam("Role", o => o.MapFrom(s => s.Rol));
+                .ConstructUsing(s => new UsuarioListaDto(
+                    s.Id,
+                    s.Email,
+                    s.Rol,
+                    s.Nombre ?? "",
+                    s.Identificacion,
+                    s.Telefono,
+                    s.EstaBloqueado,
+                    s.IntentosFallidos,
+                    s.FechaCreacion,
+                    0
+                ));
 
             CreateMap<Usuario, UsuarioDetalleDto>()
-                .ForCtorParam("Id", o => o.MapFrom(s => s.Id.ToString()));
+                .ConstructUsing(s => new UsuarioDetalleDto(
+                    s.Id.ToString(),
+                    s.Email,
+                    s.Rol,
+                    s.Nombre ?? "",
+                    s.Identificacion,
+                    s.Telefono,
+                    s.EstaBloqueado,
+                    s.IntentosFallidos,
+                    s.FechaCreacion,
+                    s.FechaBloqueo
+                ));
 
             CreateMap<Usuario, UsuarioCreacionDto>()
-                .ForCtorParam("Id", o => o.MapFrom(s => s.Id.ToString()));
+                .ConstructUsing(s => new UsuarioCreacionDto(
+                    s.Id.ToString(),
+                    s.Email,
+                    s.Rol,
+                    s.Nombre
+                ));
 
             CreateMap<Usuario, UsuarioActualizacionDto>()
-                .ForCtorParam("Id", o => o.MapFrom(s => s.Id.ToString()));
+                .ConstructUsing(s => new UsuarioActualizacionDto(
+                    s.Id.ToString(),
+                    s.Email,
+                    s.Rol,
+                    s.Nombre,
+                    s.Identificacion,
+                    s.Telefono
+                ));
 
             CreateMap<Usuario, UsuarioBloqueoDto>()
-                .ForCtorParam("Id", o => o.MapFrom(s => s.Id.ToString()))
-                .ForCtorParam("Bloqueado", o => o.MapFrom(s => s.EstaBloqueado));
+                .ConstructUsing(s => new UsuarioBloqueoDto(
+                    s.Id.ToString(),
+                    s.EstaBloqueado,
+                    s.FechaBloqueo
+                ));
 
             CreateMap<Usuario, CambioContrasenaDto>()
-                .ForCtorParam("Id", o => o.MapFrom(s => s.Id.ToString()))
-                .ForCtorParam("FechaCambio", o => o.MapFrom(_ => DateTime.UtcNow));
+                .ConstructUsing(s => new CambioContrasenaDto(
+                    s.Id.ToString(),
+                    s.Email,
+                    DateTime.UtcNow
+                ));
 
             CreateMap<Usuario, RegistroDto>()
-                .ForCtorParam("Id", o => o.MapFrom(s => s.Id.ToString()));
+                .ConstructUsing(s => new RegistroDto(
+                    s.Id.ToString(),
+                    s.Email,
+                    s.Rol,
+                    s.Nombre,
+                    s.Identificacion,
+                    s.Telefono
+                ));
 
             // ==================== PROVEEDOR SERVICIO MAPPINGS ====================
             
             CreateMap<ProveedorServicio, ProveedorServicioDto>();
 
             CreateMap<ProveedorServicio, ProveedorListaDto>()
-                .ForCtorParam("Id", o => o.MapFrom(s => s.Id.ToString()))
-                .ForCtorParam("Type", o => o.MapFrom(s => ProveedorServicioReglas.ExtraerTipo(s.Nombre)))
-                .ForCtorParam("Icon", o => o.MapFrom(s => ProveedorServicioReglas.ObtenerIcono(ProveedorServicioReglas.ExtraerTipo(s.Nombre))))
-                .ForCtorParam("ReglaValidacion", o => o.MapFrom(s => s.ReglaValidacionContrato))
-                .ForCtorParam("Activo", o => o.MapFrom(_ => true))
-                .ForCtorParam("CreadoPor", o => o.MapFrom(s => s.CreadoPor != null ? s.CreadoPor.Nombre : "Sistema"));
+                .ConstructUsing(s => new ProveedorListaDto(
+                    s.Id.ToString(),
+                    s.Nombre,
+                    ProveedorServicioReglas.ExtraerTipo(s.Nombre),
+                    ProveedorServicioReglas.ObtenerIcono(ProveedorServicioReglas.ExtraerTipo(s.Nombre)),
+                    s.ReglaValidacionContrato,
+                    true,
+                    s.CreadoPor != null ? s.CreadoPor.Nombre ?? "Sistema" : "Sistema"
+                ));
 
             CreateMap<ProveedorServicio, ProveedorDetalleDto>()
-                .ForCtorParam("Id", o => o.MapFrom(s => s.Id.ToString()))
-                .ForCtorParam("Type", o => o.MapFrom(s => ProveedorServicioReglas.ExtraerTipo(s.Nombre)))
-                .ForCtorParam("Icon", o => o.MapFrom(s => ProveedorServicioReglas.ObtenerIcono(ProveedorServicioReglas.ExtraerTipo(s.Nombre))))
-                .ForCtorParam("ReglaValidacion", o => o.MapFrom(s => s.ReglaValidacionContrato))
-                .ForCtorParam("Activo", o => o.MapFrom(_ => true));
+                .ConstructUsing(s => new ProveedorDetalleDto(
+                    s.Id.ToString(),
+                    s.Nombre,
+                    ProveedorServicioReglas.ExtraerTipo(s.Nombre),
+                    ProveedorServicioReglas.ObtenerIcono(ProveedorServicioReglas.ExtraerTipo(s.Nombre)),
+                    s.ReglaValidacionContrato,
+                    true
+                ));
 
             CreateMap<ProveedorServicio, ProveedorCreacionDto>()
-                .ForCtorParam("Id", o => o.MapFrom(s => s.Id.ToString()))
-                .ForCtorParam("ReglaValidacion", o => o.MapFrom(s => s.ReglaValidacionContrato));
+                .ConstructUsing(s => new ProveedorCreacionDto(
+                    s.Id.ToString(),
+                    s.Nombre,
+                    s.ReglaValidacionContrato
+                ));
 
             // ==================== TRANSACCION MAPPINGS ====================
             
             CreateMap<Transaccion, TransferenciaListaDto>()
-                .ForCtorParam("CuentaOrigen", o => o.MapFrom(s => s.CuentaOrigen != null ? s.CuentaOrigen.Numero : ""))
-                .ForCtorParam("CuentaDestino", o => o.MapFrom(s => s.CuentaDestino != null ? s.CuentaDestino.Numero : null))
-                .ForCtorParam("BeneficiarioAlias", o => o.MapFrom(s => s.Beneficiario != null ? s.Beneficiario.Alias : null));
+                .ConstructUsing(s => new TransferenciaListaDto(
+                    s.Id,
+                    s.Tipo,
+                    s.Estado,
+                    s.Monto,
+                    s.Moneda,
+                    s.Comision,
+                    s.FechaCreacion,
+                    s.FechaEjecucion,
+                    s.ComprobanteReferencia,
+                    s.Descripcion,
+                    s.CuentaOrigen != null ? s.CuentaOrigen.Numero : "",
+                    s.CuentaDestino != null ? s.CuentaDestino.Numero : null,
+                    s.Beneficiario != null ? s.Beneficiario.Alias : null
+                ));
 
             CreateMap<Transaccion, PagoRealizadoDto>()
-                .ForCtorParam("TransaccionId", o => o.MapFrom(s => s.Id))
-                .ForCtorParam("ComprobanteReferencia", o => o.MapFrom(s => s.ComprobanteReferencia ?? ""))
-                .ForCtorParam("MontoTotal", o => o.MapFrom(s => s.Monto + s.Comision))
-                .ForCtorParam("Proveedor", o => o.MapFrom(s => s.ProveedorServicio != null ? s.ProveedorServicio.Nombre : null))
-                .ForCtorParam("NumeroContrato", o => o.MapFrom(s => s.NumeroContrato ?? ""));
+                .ConstructUsing(s => new PagoRealizadoDto(
+                    s.Id,
+                    s.ComprobanteReferencia ?? "",
+                    s.Monto,
+                    s.Comision,
+                    s.Monto + s.Comision,
+                    s.Estado,
+                    s.FechaEjecucion,
+                    s.ProveedorServicio != null ? s.ProveedorServicio.Nombre : null,
+                    s.NumeroContrato ?? ""
+                ));
 
             CreateMap<Transaccion, PagoDetalleDto>()
-                .ForCtorParam("Proveedor", o => o.MapFrom(s => s.ProveedorServicio != null ? s.ProveedorServicio.Nombre : null))
-                .ForCtorParam("NumeroContrato", o => o.MapFrom(s => s.NumeroContrato ?? ""))
-                .ForCtorParam("ComprobanteReferencia", o => o.MapFrom(s => s.ComprobanteReferencia ?? ""));
+                .ConstructUsing(s => new PagoDetalleDto(
+                    s.Id,
+                    s.ProveedorServicio != null ? s.ProveedorServicio.Nombre : null,
+                    s.NumeroContrato ?? "",
+                    s.Monto,
+                    s.Moneda,
+                    s.Comision,
+                    s.Estado,
+                    s.FechaCreacion,
+                    s.FechaEjecucion,
+                    s.ComprobanteReferencia ?? "",
+                    s.Descripcion
+                ));
 
             CreateMap<Transaccion, PagoListaDto>()
-                .ForCtorParam("Proveedor", o => o.MapFrom(s => s.ProveedorServicio != null ? s.ProveedorServicio.Nombre : null))
-                .ForCtorParam("NumeroContrato", o => o.MapFrom(s => s.NumeroContrato ?? ""))
-                .ForCtorParam("ComprobanteReferencia", o => o.MapFrom(s => s.ComprobanteReferencia ?? ""));
+                .ConstructUsing(s => new PagoListaDto(
+                    s.Id,
+                    s.ProveedorServicio != null ? s.ProveedorServicio.Nombre : null,
+                    s.NumeroContrato ?? "",
+                    s.Monto,
+                    s.Moneda,
+                    s.Comision,
+                    s.Estado,
+                    s.FechaCreacion,
+                    s.FechaEjecucion,
+                    s.ComprobanteReferencia ?? ""
+                ));
 
             CreateMap<Transaccion, PagoResumenDto>()
-                .ForCtorParam("Proveedor", o => o.MapFrom(s => s.ProveedorServicio != null ? s.ProveedorServicio.Nombre : null));
+                .ConstructUsing(s => new PagoResumenDto(
+                    s.Id,
+                    s.ProveedorServicio != null ? s.ProveedorServicio.Nombre : null,
+                    s.Monto,
+                    s.Estado,
+                    s.FechaCreacion
+                ));
 
             // ==================== PROGRAMACION MAPPINGS ====================
             
             CreateMap<Programacion, ProgramacionListaDto>()
-                .ForCtorParam("TransaccionId", o => o.MapFrom(s => s.TransaccionId))
-                .ForCtorParam("Tipo", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Tipo : null))
-                .ForCtorParam("Monto", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Monto : (decimal?)null))
-                .ForCtorParam("Moneda", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Moneda : null))
-                .ForCtorParam("Descripcion", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Descripcion : null))
-                .ForCtorParam("EstadoJob", o => o.MapFrom(s => s.EstadoJob))
-                .ForCtorParam("PuedeCancelarse", o => o.MapFrom(s => s.EstadoJob == "Pendiente" && DateTime.UtcNow < s.FechaLimiteCancelacion));
+                .ConstructUsing(s => new ProgramacionListaDto(
+                    s.TransaccionId,
+                    s.Transaccion != null ? s.Transaccion.Tipo : null,
+                    s.Transaccion != null ? s.Transaccion.Monto : null,
+                    s.Transaccion != null ? s.Transaccion.Moneda : null,
+                    s.Transaccion != null ? s.Transaccion.Descripcion : null,
+                    s.FechaProgramada,
+                    s.FechaLimiteCancelacion,
+                    s.EstadoJob,
+                    s.EstadoJob == "Pendiente" && DateTime.UtcNow < s.FechaLimiteCancelacion
+                ));
 
             CreateMap<Programacion, ProgramacionResumenDto>()
-                .ForCtorParam("TransaccionId", o => o.MapFrom(s => s.TransaccionId))
-                .ForCtorParam("Tipo", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Tipo : null))
-                .ForCtorParam("Monto", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Monto : (decimal?)null))
-                .ForCtorParam("Moneda", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Moneda : null))
-                .ForCtorParam("EstadoJob", o => o.MapFrom(s => s.EstadoJob));
+                .ConstructUsing(s => new ProgramacionResumenDto(
+                    s.TransaccionId,
+                    s.Transaccion != null ? s.Transaccion.Tipo : null,
+                    s.Transaccion != null ? s.Transaccion.Monto : null,
+                    s.Transaccion != null ? s.Transaccion.Moneda : null,
+                    s.FechaProgramada,
+                    s.EstadoJob
+                ));
 
             CreateMap<Programacion, ProgramacionDetalleDto>()
-                .ForCtorParam("Id", o => o.MapFrom(s => s.TransaccionId))
-                .ForCtorParam("TransaccionId", o => o.MapFrom(s => s.TransaccionId))
-                .ForCtorParam("Tipo", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Tipo : null))
-                .ForCtorParam("Monto", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Monto : (decimal?)null))
-                .ForCtorParam("Moneda", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Moneda : null))
-                .ForCtorParam("Descripcion", o => o.MapFrom(s => s.Transaccion != null ? s.Transaccion.Descripcion : null))
-                .ForCtorParam("EstadoJob", o => o.MapFrom(s => s.EstadoJob))
-                .ForCtorParam("PuedeCancelarse", o => o.MapFrom(s => s.EstadoJob == "Pendiente" && DateTime.UtcNow < s.FechaLimiteCancelacion))
-                .ForCtorParam("CuentaOrigen", o => o.MapFrom(s => s.Transaccion != null && s.Transaccion.CuentaOrigen != null 
-                    ? s.Transaccion.CuentaOrigen.Numero : null))
-                .ForCtorParam("CuentaDestino", o => o.MapFrom(s => s.Transaccion != null && s.Transaccion.CuentaDestino != null 
-                    ? s.Transaccion.CuentaDestino.Numero : null));
+                .ConstructUsing(s => new ProgramacionDetalleDto(
+                    s.TransaccionId,
+                    s.TransaccionId,
+                    s.Transaccion != null ? s.Transaccion.Tipo : null,
+                    s.Transaccion != null ? s.Transaccion.Monto : null,
+                    s.Transaccion != null ? s.Transaccion.Moneda : null,
+                    s.Transaccion != null ? s.Transaccion.Descripcion : null,
+                    s.FechaProgramada,
+                    s.FechaLimiteCancelacion,
+                    s.EstadoJob,
+                    s.EstadoJob == "Pendiente" && DateTime.UtcNow < s.FechaLimiteCancelacion,
+                    s.Transaccion != null && s.Transaccion.CuentaOrigen != null ? s.Transaccion.CuentaOrigen.Numero : null,
+                    s.Transaccion != null && s.Transaccion.CuentaDestino != null ? s.Transaccion.CuentaDestino.Numero : null
+                ));
         }
     }
 }
