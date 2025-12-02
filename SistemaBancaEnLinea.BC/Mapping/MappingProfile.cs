@@ -42,14 +42,38 @@ namespace SistemaBancaEnLinea.BC.Mapping
             // ==================== BENEFICIARIO MAPPINGS ====================
             
             CreateMap<Beneficiario, BeneficiarioListaDto>()
-                .ForMember(d => d.NumeroCuenta, o => o.MapFrom(s => s.NumeroCuentaDestino));
+                .ConstructUsing(s => new BeneficiarioListaDto(
+                    s.Id,
+                    s.Alias,
+                    s.Banco,
+                    s.Moneda,
+                    s.NumeroCuentaDestino,
+                    s.Pais ?? "Costa Rica",
+                    s.Estado,
+                    s.FechaCreacion
+                ));
 
             CreateMap<Beneficiario, BeneficiarioDetalleDto>()
-                .ForMember(d => d.NumeroCuenta, o => o.MapFrom(s => s.NumeroCuentaDestino))
-                .ForMember(d => d.TieneOperacionesPendientes, o => o.Ignore());
+                .ConstructUsing(s => new BeneficiarioDetalleDto(
+                    s.Id,
+                    s.Alias,
+                    s.Banco,
+                    s.Moneda,
+                    s.NumeroCuentaDestino,
+                    s.Pais ?? "Costa Rica",
+                    s.Estado,
+                    s.FechaCreacion,
+                    false
+                ));
 
             CreateMap<Beneficiario, BeneficiarioCreacionDto>()
-                .ForMember(d => d.NumeroCuenta, o => o.MapFrom(s => s.NumeroCuentaDestino));
+                .ConstructUsing(s => new BeneficiarioCreacionDto(
+                    s.Id,
+                    s.Alias,
+                    s.Banco,
+                    s.NumeroCuentaDestino,
+                    s.Estado
+                ));
 
             CreateMap<Beneficiario, BeneficiarioConfirmacionDto>();
 

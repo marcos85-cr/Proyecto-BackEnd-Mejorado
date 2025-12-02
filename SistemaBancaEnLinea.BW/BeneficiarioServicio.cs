@@ -1,22 +1,27 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.DA;
 using SistemaBancaEnLinea.DA.Acciones;
 
 namespace SistemaBancaEnLinea.BW
 {
     public class BeneficiarioServicio : IBeneficiarioServicio
     {
+        private readonly BancaContext _context;
         private readonly BeneficiarioAcciones _beneficiarioAcciones;
         private readonly AuditoriaAcciones _auditoriaAcciones;
         private readonly ILogger<BeneficiarioServicio> _logger;
 
         public BeneficiarioServicio(
+            BancaContext context,
             BeneficiarioAcciones beneficiarioAcciones,
             AuditoriaAcciones auditoriaAcciones,
             ILogger<BeneficiarioServicio> logger)
         {
+            _context = context;
             _beneficiarioAcciones = beneficiarioAcciones;
             _auditoriaAcciones = auditoriaAcciones;
             _logger = logger;
@@ -59,45 +64,71 @@ namespace SistemaBancaEnLinea.BW
         /// </summary>
         public async Task<Beneficiario> CrearBeneficiarioAsync(Beneficiario beneficiario)
         {
-            try
+            // Validar alias
+            if (!BeneficiariosReglas.ValidarAlias(beneficiario.Alias))
+                throw new InvalidOperationException(
+                    $"El alias debe tener entre {BeneficiariosReglas.LONGITUD_MINIMA_ALIAS} " +
+                    $"y {BeneficiariosReglas.LONGITUD_MAXIMA_ALIAS} caracteres.");
+
+            // Validar número de cuenta
+            if (!BeneficiariosReglas.ValidarNumeroCuenta(beneficiario.NumeroCuentaDestino))
+                throw new InvalidOperationException(
+                    $"El número de cuenta debe tener entre {BeneficiariosReglas.LONGITUD_MINIMA_CUENTA} " +
+                    $"y {BeneficiariosReglas.LONGITUD_MAXIMA_CUENTA} dígitos.");
+
+            // RF-C1: Validar alias único por cliente
+            var aliasExiste = await _beneficiarioAcciones.ExisteAliasParaClienteAsync(
+                beneficiario.ClienteId, beneficiario.Alias);
+            if (aliasExiste)
+                throw new InvalidOperationException("Ya existe un beneficiario con este alias.");
+
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
             {
-                // Validar alias
-                if (!BeneficiariosReglas.ValidarAlias(beneficiario.Alias))
-                    throw new InvalidOperationException(
-                        $"El alias debe tener entre {BeneficiariosReglas.LONGITUD_MINIMA_ALIAS} " +
-                        $"y {BeneficiariosReglas.LONGITUD_MAXIMA_ALIAS} caracteres.");
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
-                // Validar número de cuenta
-                if (!BeneficiariosReglas.ValidarNumeroCuenta(beneficiario.NumeroCuentaDestino))
-                    throw new InvalidOperationException(
-                        $"El número de cuenta debe tener entre {BeneficiariosReglas.LONGITUD_MINIMA_CUENTA} " +
-                        $"y {BeneficiariosReglas.LONGITUD_MAXIMA_CUENTA} dígitos.");
+                try
+                {
+                    beneficiario.Estado = "Inactivo";
+                    beneficiario.FechaCreacion = DateTime.UtcNow;
 
-                // RF-C1: Validar alias único por cliente
-                var aliasExiste = await _beneficiarioAcciones.ExisteAliasParaClienteAsync(
-                    beneficiario.ClienteId, beneficiario.Alias);
-                if (aliasExiste)
-                    throw new InvalidOperationException("Ya existe un beneficiario con este alias.");
+                    var beneficiarioCreado = await _beneficiarioAcciones.CrearAsync(beneficiario);
 
-                beneficiario.Estado = "Inactivo";
-                beneficiario.FechaCreacion = DateTime.UtcNow;
+                    await transaction.CommitAsync();
 
-                var beneficiarioCreado = await _beneficiarioAcciones.CrearAsync(beneficiario);
+                    try
+                    {
+                        await _auditoriaAcciones.RegistrarAsync(
+                            beneficiario.ClienteId,
+                            "CreacionBeneficiario",
+                            $"Beneficiario {beneficiario.Alias} creado. Estado: Inactivo"
+                        );
+                    }
+                    catch (Exception auditEx)
+                    {
+                        _logger.LogWarning($"Error registrando auditoría pero creación fue exitosa: {auditEx.Message}");
+                    }
 
-                await _auditoriaAcciones.RegistrarAsync(
-                    beneficiario.ClienteId,
-                    "CreacionBeneficiario",
-                    $"Beneficiario {beneficiario.Alias} creado. Estado: Inactivo"
-                );
+                    _logger.LogInformation($"Beneficiario {beneficiario.Alias} creado");
+                    return beneficiarioCreado;
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogWarning($"Transacción revertida debido a error: {ex.Message}");
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogError($"Error crítico haciendo rollback: {rollbackEx.Message}");
+                    }
 
-                _logger.LogInformation($"Beneficiario {beneficiario.Alias} creado");
-                return beneficiarioCreado;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error creando beneficiario: {ex.Message}");
-                throw;
-            }
+                    _logger.LogError($"Error creando beneficiario: {ex.Message}");
+                    throw new InvalidOperationException($"Error creando beneficiario: {ex.Message}", ex);
+                }
+            });
         }
 
         /// <summary>
@@ -106,35 +137,54 @@ namespace SistemaBancaEnLinea.BW
         /// </summary>
         public async Task<Beneficiario> ActualizarBeneficiarioAsync(int id, string nuevoAlias)
         {
-            try
+            var beneficiario = await _beneficiarioAcciones.ObtenerPorIdAsync(id);
+            if (beneficiario == null)
+                throw new InvalidOperationException("El beneficiario no existe.");
+
+            if (!BeneficiariosReglas.PuedeActualizarse(beneficiario))
+                throw new InvalidOperationException(
+                    "Solo se pueden actualizar beneficiarios en estado Inactivo.");
+
+            // RF-C2: Validar que no tenga operaciones pendientes
+            if (await _beneficiarioAcciones.TieneOperacionesPendientesAsync(id))
+                throw new InvalidOperationException(
+                    "No se puede editar el beneficiario porque tiene operaciones pendientes.");
+
+            if (!BeneficiariosReglas.ValidarAlias(nuevoAlias))
+                throw new InvalidOperationException("El alias no es válido.");
+
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
             {
-                var beneficiario = await _beneficiarioAcciones.ObtenerPorIdAsync(id);
-                if (beneficiario == null)
-                    throw new InvalidOperationException("El beneficiario no existe.");
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
-                if (!BeneficiariosReglas.PuedeActualizarse(beneficiario))
-                    throw new InvalidOperationException(
-                        "Solo se pueden actualizar beneficiarios en estado Inactivo.");
+                try
+                {
+                    beneficiario.Alias = nuevoAlias;
+                    await _beneficiarioAcciones.ActualizarAsync(beneficiario);
 
-                // RF-C2: Validar que no tenga operaciones pendientes
-                if (await _beneficiarioAcciones.TieneOperacionesPendientesAsync(id))
-                    throw new InvalidOperationException(
-                        "No se puede editar el beneficiario porque tiene operaciones pendientes.");
+                    await transaction.CommitAsync();
 
-                if (!BeneficiariosReglas.ValidarAlias(nuevoAlias))
-                    throw new InvalidOperationException("El alias no es válido.");
+                    _logger.LogInformation($"Beneficiario {id} actualizado");
+                    return beneficiario;
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogWarning($"Transacción revertida debido a error: {ex.Message}");
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogError($"Error crítico haciendo rollback: {rollbackEx.Message}");
+                    }
 
-                beneficiario.Alias = nuevoAlias;
-                await _beneficiarioAcciones.ActualizarAsync(beneficiario);
-
-                _logger.LogInformation($"Beneficiario {id} actualizado");
-                return beneficiario;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error actualizando beneficiario {id}: {ex.Message}");
-                throw;
-            }
+                    _logger.LogError($"Error actualizando beneficiario {id}: {ex.Message}");
+                    throw new InvalidOperationException($"Error actualizando beneficiario: {ex.Message}", ex);
+                }
+            });
         }
 
         /// <summary>
@@ -143,32 +193,58 @@ namespace SistemaBancaEnLinea.BW
         /// </summary>
         public async Task EliminarBeneficiarioAsync(int id)
         {
-            try
+            var beneficiario = await _beneficiarioAcciones.ObtenerPorIdAsync(id);
+            if (beneficiario == null)
+                throw new InvalidOperationException("El beneficiario no existe.");
+
+            // RF-C2: Validar que no tenga operaciones pendientes
+            if (await _beneficiarioAcciones.TieneOperacionesPendientesAsync(id))
+                throw new InvalidOperationException(
+                    "No se puede eliminar el beneficiario porque tiene operaciones pendientes.");
+
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            await strategy.ExecuteAsync(async () =>
             {
-                var beneficiario = await _beneficiarioAcciones.ObtenerPorIdAsync(id);
-                if (beneficiario == null)
-                    throw new InvalidOperationException("El beneficiario no existe.");
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
-                // RF-C2: Validar que no tenga operaciones pendientes
-                if (await _beneficiarioAcciones.TieneOperacionesPendientesAsync(id))
-                    throw new InvalidOperationException(
-                        "No se puede eliminar el beneficiario porque tiene operaciones pendientes.");
+                try
+                {
+                    await _beneficiarioAcciones.EliminarAsync(beneficiario);
 
-                await _beneficiarioAcciones.EliminarAsync(beneficiario);
+                    await transaction.CommitAsync();
 
-                await _auditoriaAcciones.RegistrarAsync(
-                    beneficiario.ClienteId,
-                    "EliminacionBeneficiario",
-                    $"Beneficiario {beneficiario.Alias} eliminado"
-                );
+                    try
+                    {
+                        await _auditoriaAcciones.RegistrarAsync(
+                            beneficiario.ClienteId,
+                            "EliminacionBeneficiario",
+                            $"Beneficiario {beneficiario.Alias} eliminado"
+                        );
+                    }
+                    catch (Exception auditEx)
+                    {
+                        _logger.LogWarning($"Error registrando auditoría pero eliminación fue exitosa: {auditEx.Message}");
+                    }
 
-                _logger.LogInformation($"Beneficiario {id} eliminado");
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error eliminando beneficiario {id}: {ex.Message}");
-                throw;
-            }
+                    _logger.LogInformation($"Beneficiario {id} eliminado");
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogWarning($"Transacción revertida debido a error: {ex.Message}");
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogError($"Error crítico haciendo rollback: {rollbackEx.Message}");
+                    }
+
+                    _logger.LogError($"Error eliminando beneficiario {id}: {ex.Message}");
+                    throw new InvalidOperationException($"Error eliminando beneficiario: {ex.Message}", ex);
+                }
+            });
         }
 
         /// <summary>
@@ -176,29 +252,55 @@ namespace SistemaBancaEnLinea.BW
         /// </summary>
         public async Task<Beneficiario> ConfirmarBeneficiarioAsync(int id)
         {
-            try
+            var strategy = _context.Database.CreateExecutionStrategy();
+
+            return await strategy.ExecuteAsync(async () =>
             {
-                var beneficiario = await _beneficiarioAcciones.ObtenerPorIdAsync(id);
-                if (beneficiario == null)
-                    throw new InvalidOperationException("El beneficiario no existe.");
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
-                beneficiario.Estado = "Confirmado";
-                await _beneficiarioAcciones.ActualizarAsync(beneficiario);
+                try
+                {
+                    var beneficiario = await _beneficiarioAcciones.ObtenerPorIdAsync(id);
+                    if (beneficiario == null)
+                        throw new InvalidOperationException("El beneficiario no existe.");
 
-                await _auditoriaAcciones.RegistrarAsync(
-                    beneficiario.ClienteId,
-                    "ConfirmacionBeneficiario",
-                    $"Beneficiario {beneficiario.Alias} confirmado"
-                );
+                    beneficiario.Estado = "Confirmado";
+                    await _beneficiarioAcciones.ActualizarAsync(beneficiario);
 
-                _logger.LogInformation($"Beneficiario {id} confirmado");
-                return beneficiario;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Error confirmando beneficiario {id}: {ex.Message}");
-                throw;
-            }
+                    await transaction.CommitAsync();
+
+                    try
+                    {
+                        await _auditoriaAcciones.RegistrarAsync(
+                            beneficiario.ClienteId,
+                            "ConfirmacionBeneficiario",
+                            $"Beneficiario {beneficiario.Alias} confirmado"
+                        );
+                    }
+                    catch (Exception auditEx)
+                    {
+                        _logger.LogWarning($"Error registrando auditoría pero confirmación fue exitosa: {auditEx.Message}");
+                    }
+
+                    _logger.LogInformation($"Beneficiario {id} confirmado");
+                    return beneficiario;
+                }
+                catch (Exception ex)
+                {
+                    try
+                    {
+                        await transaction.RollbackAsync();
+                        _logger.LogWarning($"Transacción revertida debido a error: {ex.Message}");
+                    }
+                    catch (Exception rollbackEx)
+                    {
+                        _logger.LogError($"Error crítico haciendo rollback: {rollbackEx.Message}");
+                    }
+
+                    _logger.LogError($"Error confirmando beneficiario {id}: {ex.Message}");
+                    throw new InvalidOperationException($"Error confirmando beneficiario: {ex.Message}", ex);
+                }
+            });
         }
 
         /// <summary>

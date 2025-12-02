@@ -47,7 +47,9 @@ namespace SistemaBancaEnLinea.DA.Acciones
         public async Task<List<Beneficiario>> ObtenerPorClienteAsync(int clienteId)
         {
             return await _context.Beneficiarios
+                .AsNoTracking()
                 .Where(b => b.ClienteId == clienteId)
+                .OrderByDescending(b => b.FechaCreacion)
                 .ToListAsync();
         }
 

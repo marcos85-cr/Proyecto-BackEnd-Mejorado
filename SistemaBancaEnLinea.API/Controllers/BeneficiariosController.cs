@@ -62,7 +62,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error creando beneficiario");
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -87,7 +87,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo beneficiario {Id}", id);
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -119,7 +119,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error confirmando beneficiario {Id}", id);
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -140,7 +140,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo beneficiarios del cliente");
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -158,7 +158,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo beneficiarios del cliente {ClienteId}", clienteId);
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -190,7 +190,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error actualizando beneficiario {Id}", id);
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
@@ -220,7 +220,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error eliminando beneficiario {Id}", id);
-                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
