@@ -28,6 +28,26 @@ namespace SistemaBancaEnLinea.BW
         }
 
         /// <summary>
+        /// Obtiene todos los beneficiarios del sistema (solo para Administrador)
+        /// </summary>
+        public async Task<List<Beneficiario>> ObtenerTodosAsync()
+        {
+            try
+            {
+                return await _context.Beneficiarios
+                    .Include(b => b.Cliente)
+                        .ThenInclude(c => c.UsuarioAsociado)
+                    .OrderByDescending(b => b.FechaCreacion)
+                    .ToListAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Error obteniendo todos los beneficiarios: {ex.Message}");
+                throw;
+            }
+        }
+
+        /// <summary>
         /// Obtiene todos los beneficiarios del cliente
         /// </summary>
         public async Task<List<Beneficiario>> ObtenerMisBeneficiariosAsync(int clienteId)

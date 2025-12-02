@@ -33,6 +33,45 @@ namespace SistemaBancaEnLinea.API.Controllers
             _logger = logger;
         }
 
+        [HttpGet]
+        [Authorize(Roles = "Administrador")]
+        public async Task<IActionResult> ObtenerTodos([FromQuery] bool? confirmado)
+        {
+            try
+            {
+                var beneficiarios = await _beneficiarioServicio.ObtenerTodosAsync();
+
+                // Filtrar por estado de confirmación si se especifica
+                if (confirmado.HasValue)
+                {
+                    var estadoBuscado = confirmado.Value ? "Confirmado" : "Inactivo";
+                    beneficiarios = beneficiarios
+                        .Where(b => b.Estado == estadoBuscado)
+                        .ToList();
+                }
+
+                var beneficiariosDto = beneficiarios.Select(b => new BeneficiarioAdminDto(
+                    b.Id,
+                    b.ClienteId,
+                    b.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
+                    b.Cliente?.UsuarioAsociado?.Email ?? "N/A",
+                    b.NumeroCuentaDestino,
+                    b.Banco,
+                    b.Alias,
+                    b.Estado == "Confirmado",
+                    b.FechaCreacion,
+                    null  // FechaConfirmacion no está en el modelo actual
+                )).ToList();
+
+                return Ok(ApiResponse<IEnumerable<BeneficiarioAdminDto>>.Ok(beneficiariosDto));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo todos los beneficiarios");
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
+            }
+        }
+
         [HttpPost("crear")]
         public async Task<IActionResult> CrearBeneficiario([FromBody] CrearBeneficiarioRequest request)
         {

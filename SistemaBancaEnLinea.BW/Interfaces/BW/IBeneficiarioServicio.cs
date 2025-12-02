@@ -4,6 +4,7 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
 {
     public interface IBeneficiarioServicio
     {
+        Task<List<Beneficiario>> ObtenerTodosAsync();
         Task<List<Beneficiario>> ObtenerMisBeneficiariosAsync(int clienteId);
         Task<Beneficiario?> ObtenerBeneficiarioAsync(int id);
         Task<Beneficiario> CrearBeneficiarioAsync(Beneficiario beneficiario);

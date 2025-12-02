@@ -207,6 +207,19 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
         bool TieneOperacionesPendientes
     );
 
+    public record BeneficiarioAdminDto(
+        int Id,
+        int ClienteId,
+        string ClienteNombre,
+        string ClienteEmail,
+        string NumeroCuenta,
+        string Banco,
+        string Alias,
+        bool Confirmado,
+        DateTime FechaCreacion,
+        DateTime? FechaConfirmacion
+    );
+
     public record CrearBeneficiarioRequest(
         string Alias,
         string Banco,
