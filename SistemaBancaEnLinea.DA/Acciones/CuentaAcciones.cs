@@ -111,5 +111,24 @@ namespace SistemaBancaEnLinea.DA.Acciones
             return await _context.Transacciones
                 .AnyAsync(t => t.CuentaOrigenId == cuentaId || t.CuentaDestinoId == cuentaId);
         }
+
+        /// <summary>
+        /// Verifica si la cuenta tiene operaciones pendientes (programaciones activas o transacciones en proceso)
+        /// </summary>
+        public async Task<bool> TieneOperacionesPendientesAsync(int cuentaId)
+        {
+            // Verificar transacciones en estado "Pendiente" o "En Proceso"
+            var tieneTansaccionesPendientes = await _context.Transacciones
+                .AnyAsync(t => (t.CuentaOrigenId == cuentaId || t.CuentaDestinoId == cuentaId)
+                            && (t.Estado == "Pendiente" || t.Estado == "En Proceso"));
+
+            // Verificar programaciones activas (EstadoJob = Pendiente)
+            var tieneProgramacionesActivas = await _context.Programaciones
+                .AnyAsync(p => p.Transaccion != null
+                            && (p.Transaccion.CuentaOrigenId == cuentaId || p.Transaccion.CuentaDestinoId == cuentaId)
+                            && p.EstadoJob == "Pendiente");
+
+            return tieneTansaccionesPendientes || tieneProgramacionesActivas;
+        }
     }
 }

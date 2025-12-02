@@ -4,29 +4,28 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
 {
     public interface IReportesServicio
     {
-        /// <summary>
-        /// Genera extracto de cuenta en formato DTO
-        /// </summary>
+        // Métodos existentes
         Task<ExtractoCuentaDto> GenerarExtractoCuentaAsync(int cuentaId, DateTime fechaInicio, DateTime fechaFin);
-
-        /// <summary>
-        /// Genera extracto de cuenta en PDF (bytes)
-        /// </summary>
         Task<byte[]> GenerarExtractoPdfAsync(int cuentaId, DateTime fechaInicio, DateTime fechaFin);
-
-        /// <summary>
-        /// Genera extracto de cuenta en CSV (bytes)
-        /// </summary>
         Task<byte[]> GenerarExtractoCsvAsync(int cuentaId, DateTime fechaInicio, DateTime fechaFin);
-
-        /// <summary>
-        /// Genera resumen de cliente
-        /// </summary>
         Task<ResumenClienteDto> GenerarResumenClienteAsync(int clienteId);
-
-        /// <summary>
-        /// Genera resumen de cliente en PDF
-        /// </summary>
         Task<byte[]> GenerarResumenClientePdfAsync(int clienteId);
+
+        // Métodos con validación de acceso
+        Task<(byte[]? archivo, string? numeroCuenta)> GenerarExtractoConAccesoAsync(
+            int cuentaId, DateTime? startDate, DateTime? endDate, string format, int usuarioId, string rol);
+
+        Task<byte[]?> GenerarResumenParaUsuarioAsync(int usuarioId, string format);
+
+        Task<object> GenerarReporteTransaccionesAsync(
+            DateTime inicio, DateTime fin, string? tipo, string? estado, int? clienteId, int usuarioId, string rol);
+
+        Task<object> GenerarEstadisticasDashboardAsync();
+
+        Task<object> GenerarVolumenDiarioAsync(DateTime inicio, DateTime fin, int usuarioId);
+
+        Task<object> GenerarClientesMasActivosAsync(DateTime inicio, DateTime fin, int top, int usuarioId);
+
+        Task<object> GenerarTotalesPorPeriodoAsync(DateTime inicio, DateTime fin, int usuarioId);
     }
 }

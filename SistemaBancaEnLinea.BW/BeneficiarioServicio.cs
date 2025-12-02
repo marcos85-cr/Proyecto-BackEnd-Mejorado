@@ -310,5 +310,119 @@ namespace SistemaBancaEnLinea.BW
         {
             return await _beneficiarioAcciones.TieneOperacionesPendientesAsync(beneficiarioId);
         }
+
+        /// <summary>
+        /// Crea un beneficiario para un usuario específico (obtiene clienteId desde usuario)
+        /// </summary>
+        public async Task<Beneficiario> CrearBeneficiarioParaUsuarioAsync(Beneficiario beneficiario, int usuarioId)
+        {
+            var cliente = await _context.Clientes
+                .Include(c => c.UsuarioAsociado)
+                .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuarioId);
+
+            if (cliente == null)
+                throw new InvalidOperationException("Cliente no identificado.");
+
+            beneficiario.ClienteId = cliente.Id;
+            var resultado = await CrearBeneficiarioAsync(beneficiario);
+
+            await _auditoriaAcciones.RegistrarAsync(
+                usuarioId, "CreacionBeneficiario", $"Beneficiario {beneficiario.Alias} creado");
+
+            return resultado;
+        }
+
+        /// <summary>
+        /// Obtiene un beneficiario validando acceso del usuario
+        /// </summary>
+        public async Task<(Beneficiario? beneficiario, bool tieneOperaciones)> ObtenerBeneficiarioConAccesoAsync(
+            int id, int usuarioId, string rol)
+        {
+            var beneficiario = await ObtenerBeneficiarioAsync(id);
+            if (beneficiario == null)
+                return (null, false);
+
+            // Validar acceso
+            if (!await ValidarAccesoAsync(beneficiario.ClienteId, usuarioId, rol))
+                throw new UnauthorizedAccessException("No tiene acceso a este beneficiario.");
+
+            var tieneOperaciones = await TieneOperacionesPendientesAsync(id);
+            return (beneficiario, tieneOperaciones);
+        }
+
+        /// <summary>
+        /// Confirma un beneficiario validando acceso (solo Administrador)
+        /// </summary>
+        public async Task<Beneficiario> ConfirmarBeneficiarioConAccesoAsync(int id, int usuarioId, string rol)
+        {
+            var beneficiario = await ObtenerBeneficiarioAsync(id);
+            if (beneficiario == null)
+                throw new InvalidOperationException("Beneficiario no encontrado.");
+
+            if (!await ValidarAccesoAsync(beneficiario.ClienteId, usuarioId, rol))
+                throw new UnauthorizedAccessException("No tiene acceso a este beneficiario.");
+
+            var resultado = await ConfirmarBeneficiarioAsync(id);
+
+            await _auditoriaAcciones.RegistrarAsync(
+                usuarioId, "ConfirmacionBeneficiario", $"Beneficiario {resultado.Alias} confirmado");
+
+            return resultado;
+        }
+
+        /// <summary>
+        /// Actualiza un beneficiario validando acceso
+        /// </summary>
+        public async Task<Beneficiario> ActualizarBeneficiarioConAccesoAsync(
+            int id, string alias, int usuarioId, string rol)
+        {
+            var beneficiario = await ObtenerBeneficiarioAsync(id);
+            if (beneficiario == null)
+                throw new InvalidOperationException("Beneficiario no encontrado.");
+
+            if (!await ValidarAccesoAsync(beneficiario.ClienteId, usuarioId, rol))
+                throw new UnauthorizedAccessException("No tiene acceso a este beneficiario.");
+
+            var resultado = await ActualizarBeneficiarioAsync(id, alias);
+
+            await _auditoriaAcciones.RegistrarAsync(
+                usuarioId, "ActualizacionBeneficiario", $"Beneficiario {id} actualizado a alias: {alias}");
+
+            return resultado;
+        }
+
+        /// <summary>
+        /// Elimina un beneficiario validando acceso
+        /// </summary>
+        public async Task EliminarBeneficiarioConAccesoAsync(int id, int usuarioId, string rol)
+        {
+            var beneficiario = await ObtenerBeneficiarioAsync(id);
+            if (beneficiario == null)
+                throw new InvalidOperationException("Beneficiario no encontrado.");
+
+            if (!await ValidarAccesoAsync(beneficiario.ClienteId, usuarioId, rol))
+                throw new UnauthorizedAccessException("No tiene acceso a este beneficiario.");
+
+            var alias = beneficiario.Alias;
+            await EliminarBeneficiarioAsync(id);
+
+            await _auditoriaAcciones.RegistrarAsync(
+                usuarioId, "EliminacionBeneficiario", $"Beneficiario {alias} eliminado");
+        }
+
+        /// <summary>
+        /// Valida si el usuario tiene acceso al beneficiario según su rol
+        /// </summary>
+        private async Task<bool> ValidarAccesoAsync(int beneficiarioClienteId, int usuarioId, string rol)
+        {
+            if (rol is "Administrador" or "Gestor")
+                return true;
+
+            var cliente = await _context.Clientes
+                .Include(c => c.UsuarioAsociado)
+                .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuarioId);
+
+            return cliente != null && cliente.Id == beneficiarioClienteId;
+        }
     }
 }

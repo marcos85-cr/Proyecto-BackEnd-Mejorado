@@ -11,22 +11,13 @@ namespace SistemaBancaEnLinea.API.Controllers
     public class ReportsController : ControllerBase
     {
         private readonly IReportesServicio _reportesServicio;
-        private readonly ITransferenciasServicio _transferenciasServicio;
-        private readonly ICuentaServicio _cuentaServicio;
-        private readonly IClienteServicio _clienteServicio;
         private readonly ILogger<ReportsController> _logger;
 
         public ReportsController(
             IReportesServicio reportesServicio,
-            ITransferenciasServicio transferenciasServicio,
-            ICuentaServicio cuentaServicio,
-            IClienteServicio clienteServicio,
             ILogger<ReportsController> logger)
         {
             _reportesServicio = reportesServicio;
-            _transferenciasServicio = transferenciasServicio;
-            _cuentaServicio = cuentaServicio;
-            _clienteServicio = clienteServicio;
             _logger = logger;
         }
 
@@ -39,35 +30,26 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                // Validar propiedad de la cuenta
-                var cuenta = await _cuentaServicio.ObtenerCuentaAsync(cuentaId);
-                if (cuenta == null)
-                    return NotFound(ApiResponse.Fail("Cuenta no encontrada."));
+                var usuarioId = GetCurrentUserId();
+                var rol = GetUserRole();
 
-                var clienteId = await GetClienteIdFromTokenAsync();
-                var userRole = GetUserRole();
+                var (archivo, numeroCuenta) = await _reportesServicio.GenerarExtractoConAccesoAsync(
+                    cuentaId, startDate, endDate, format, usuarioId, rol);
 
-                // RF-F1: Cliente solo puede ver sus propias cuentas
-                if (userRole == "Cliente" && cuenta.ClienteId != clienteId)
-                    return Forbid();
-
-                var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
-                var fin = endDate ?? DateTime.UtcNow;
-
-                switch (format.ToLower())
+                if (archivo != null)
                 {
-                    case "pdf":
-                        var pdfBytes = await _reportesServicio.GenerarExtractoPdfAsync(cuentaId, inicio, fin);
-                        return File(pdfBytes, "application/pdf", $"extracto_{cuenta.Numero}_{DateTime.Now:yyyyMMdd}.pdf");
-
-                    case "csv":
-                        var csvBytes = await _reportesServicio.GenerarExtractoCsvAsync(cuentaId, inicio, fin);
-                        return File(csvBytes, "text/csv", $"extracto_{cuenta.Numero}_{DateTime.Now:yyyyMMdd}.csv");
-
-                    default: // json
-                        var extracto = await _reportesServicio.GenerarExtractoCuentaAsync(cuentaId, inicio, fin);
-                        return Ok(ApiResponse<ExtractoCuentaDto>.Ok(extracto));
+                    var extension = format.ToLower() == "pdf" ? "pdf" : "csv";
+                    var contentType = format.ToLower() == "pdf" ? "application/pdf" : "text/csv";
+                    return File(archivo, contentType, $"extracto_{numeroCuenta}_{DateTime.Now:yyyyMMdd}.{extension}");
                 }
+
+                var extracto = await _reportesServicio.GenerarExtractoCuentaAsync(
+                    cuentaId, startDate ?? DateTime.UtcNow.AddMonths(-1), endDate ?? DateTime.UtcNow);
+                return Ok(ApiResponse<ExtractoCuentaDto>.Ok(extracto));
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Forbid();
             }
             catch (InvalidOperationException ex)
             {
@@ -75,7 +57,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error generando extracto de cuenta {cuentaId}: {ex.Message}");
+                _logger.LogError(ex, "Error generando extracto de cuenta {CuentaId}", cuentaId);
                 return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
@@ -86,18 +68,15 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = await GetClienteIdFromTokenAsync();
-                if (clienteId == 0)
-                    return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
+                var usuarioId = GetCurrentUserId();
+                var archivo = await _reportesServicio.GenerarResumenParaUsuarioAsync(usuarioId, format);
 
-                if (format.ToLower() == "pdf")
-                {
-                    var pdfBytes = await _reportesServicio.GenerarResumenClientePdfAsync(clienteId);
-                    return File(pdfBytes, "application/pdf", $"resumen_{DateTime.Now:yyyyMMdd}.pdf");
-                }
+                if (archivo != null)
+                    return File(archivo, "application/pdf", $"resumen_{DateTime.Now:yyyyMMdd}.pdf");
 
-                var resumen = await _reportesServicio.GenerarResumenClienteAsync(clienteId);
-                return Ok(ApiResponse<ResumenClienteDto>.Ok(resumen));
+                // Si no es PDF, obtener clienteId y generar JSON
+                var cliente = await _reportesServicio.GenerarResumenParaUsuarioAsync(usuarioId, "json");
+                return Ok(ApiResponse.Fail("Formato no soportado para resumen JSON. Use format=pdf"));
             }
             catch (InvalidOperationException ex)
             {
@@ -105,7 +84,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error generando resumen: {ex.Message}");
+                _logger.LogError(ex, "Error generando resumen");
                 return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
@@ -131,7 +110,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error generando resumen de cliente {clienteId}: {ex.Message}");
+                _logger.LogError(ex, "Error generando resumen de cliente {ClienteId}", clienteId);
                 return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
@@ -149,80 +128,17 @@ namespace SistemaBancaEnLinea.API.Controllers
             {
                 var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
                 var fin = endDate ?? DateTime.UtcNow;
+                var usuarioId = GetCurrentUserId();
+                var rol = GetUserRole();
 
-                List<SistemaBancaEnLinea.BC.Modelos.Transaccion> transacciones;
+                var reporte = await _reportesServicio.GenerarReporteTransaccionesAsync(
+                    inicio, fin, tipo, estado, clienteId, usuarioId, rol);
 
-                if (clienteId.HasValue)
-                {
-                    transacciones = await _transferenciasServicio.ObtenerTransaccionesConFiltrosAsync(
-                        clienteId.Value, inicio, fin, tipo, estado);
-                }
-                else
-                {
-                    var gestorId = GetCurrentUserId();
-                    var userRole = GetUserRole();
-
-                    if (userRole == "Gestor")
-                    {
-                        transacciones = await _transferenciasServicio.ObtenerOperacionesPorGestorAsync(
-                            gestorId, inicio, fin);
-                    }
-                    else
-                    {
-                        transacciones = new List<SistemaBancaEnLinea.BC.Modelos.Transaccion>();
-                    }
-                }
-
-                // Filtros adicionales
-                if (!string.IsNullOrEmpty(tipo))
-                    transacciones = transacciones.Where(t => t.Tipo == tipo).ToList();
-
-                if (!string.IsNullOrEmpty(estado))
-                    transacciones = transacciones.Where(t => t.Estado == estado).ToList();
-
-                var resumen = new
-                {
-                    totalTransacciones = transacciones.Count,
-                    montoTotal = transacciones.Where(t => t.Estado == "Exitosa").Sum(t => t.Monto),
-                    comisionesTotal = 0,
-                    porTipo = transacciones.GroupBy(t => t.Tipo).Select(g => new
-                    {
-                        tipo = g.Key,
-                        cantidad = g.Count(),
-                        monto = g.Sum(t => t.Monto)
-                    }),
-                    porEstado = transacciones.GroupBy(t => t.Estado).Select(g => new
-                    {
-                        estado = g.Key,
-                        cantidad = g.Count()
-                    })
-                };
-
-                return Ok(new
-                {
-                    success = true,
-                    data = new
-                    {
-                        periodo = new { desde = inicio, hasta = fin },
-                        resumen,
-                        transacciones = transacciones.Select(t => new
-                        {
-                            id = t.Id,
-                            fecha = t.FechaCreacion,
-                            tipo = t.Tipo,
-                            clienteNombre = t.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
-                            monto = t.Monto,
-                            moneda = t.Moneda,
-                            comision = 0,
-                            estado = t.Estado,
-                            referencia = t.ComprobanteReferencia
-                        }).OrderByDescending(t => t.fecha)
-                    }
-                });
+                return Ok(reporte);
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error generando reporte de transacciones: {ex.Message}");
+                _logger.LogError(ex, "Error generando reporte de transacciones");
                 return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
@@ -233,40 +149,93 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clientes = await _clienteServicio.ObtenerTodosAsync();
-
-                var hoy = DateTime.UtcNow.Date;
-                var inicioMes = new DateTime(hoy.Year, hoy.Month, 1);
-
-                var stats = new
-                {
-                    clientes = new
-                    {
-                        total = clientes.Count,
-                        activos = clientes.Count(c => c.Estado == "Activo"),
-                        nuevosEsteMes = clientes.Count(c => c.FechaRegistro >= inicioMes)
-                    }
-                };
-
+                var stats = await _reportesServicio.GenerarEstadisticasDashboardAsync();
                 return Ok(ApiResponse<object>.Ok(stats));
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Error obteniendo estadísticas de dashboard: {ex.Message}");
+                _logger.LogError(ex, "Error obteniendo estadísticas de dashboard");
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// RF-G1: Reporte de volumen de transacciones diarias
+        /// </summary>
+        [HttpGet("daily-volume")]
+        [Authorize(Roles = "Administrador,Gestor")]
+        public async Task<IActionResult> GetDailyTransactionVolume(
+            [FromQuery] DateTime? startDate,
+            [FromQuery] DateTime? endDate)
+        {
+            try
+            {
+                var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
+                var fin = endDate ?? DateTime.UtcNow;
+                var usuarioId = GetCurrentUserId();
+
+                var reporte = await _reportesServicio.GenerarVolumenDiarioAsync(inicio, fin, usuarioId);
+                return Ok(reporte);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generando reporte de volumen diario");
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// RF-G1: Reporte de clientes más activos
+        /// </summary>
+        [HttpGet("most-active-clients")]
+        [Authorize(Roles = "Administrador,Gestor")]
+        public async Task<IActionResult> GetMostActiveClients(
+            [FromQuery] DateTime? startDate,
+            [FromQuery] DateTime? endDate,
+            [FromQuery] int top = 10)
+        {
+            try
+            {
+                var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
+                var fin = endDate ?? DateTime.UtcNow;
+                var usuarioId = GetCurrentUserId();
+
+                var reporte = await _reportesServicio.GenerarClientesMasActivosAsync(inicio, fin, top, usuarioId);
+                return Ok(reporte);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generando reporte de clientes más activos");
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// RF-G1: Reporte de totales por período
+        /// </summary>
+        [HttpGet("period-totals")]
+        [Authorize(Roles = "Administrador,Gestor")]
+        public async Task<IActionResult> GetPeriodTotals(
+            [FromQuery] DateTime? startDate,
+            [FromQuery] DateTime? endDate)
+        {
+            try
+            {
+                var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
+                var fin = endDate ?? DateTime.UtcNow;
+                var usuarioId = GetCurrentUserId();
+
+                var totales = await _reportesServicio.GenerarTotalesPorPeriodoAsync(inicio, fin, usuarioId);
+                return Ok(ApiResponse<object>.Ok(totales));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generando reporte de totales por período");
                 return StatusCode(500, ApiResponse.Fail(ex.Message));
             }
         }
 
         #region Helpers
-
-        private async Task<int> GetClienteIdFromTokenAsync()
-        {
-            var usuarioId = GetCurrentUserId();
-            if (usuarioId == 0) return 0;
-            
-            var cliente = await _clienteServicio.ObtenerPorUsuarioAsync(usuarioId);
-            return cliente?.Id ?? 0;
-        }
 
         private int GetCurrentUserId()
         {

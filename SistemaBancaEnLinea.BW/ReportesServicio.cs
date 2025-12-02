@@ -6,9 +6,11 @@ using iText.Kernel.Colors;
 using iText.Kernel.Font;
 using iText.IO.Font.Constants;
 using Microsoft.Extensions.Logging;
+using Microsoft.EntityFrameworkCore;
 using SistemaBancaEnLinea.BC.Modelos;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
+using SistemaBancaEnLinea.DA;
 using SistemaBancaEnLinea.DA.Acciones;
 using System.Text;
 
@@ -16,17 +18,20 @@ namespace SistemaBancaEnLinea.BW
 {
     public class ReportesServicio : IReportesServicio
     {
+        private readonly BancaContext _context;
         private readonly CuentaAcciones _cuentaAcciones;
         private readonly ClienteAcciones _clienteAcciones;
         private readonly TransaccionAcciones _transaccionAcciones;
         private readonly ILogger<ReportesServicio> _logger;
 
         public ReportesServicio(
+            BancaContext context,
             CuentaAcciones cuentaAcciones,
             ClienteAcciones clienteAcciones,
             TransaccionAcciones transaccionAcciones,
             ILogger<ReportesServicio> logger)
         {
+            _context = context;
             _cuentaAcciones = cuentaAcciones;
             _clienteAcciones = clienteAcciones;
             _transaccionAcciones = transaccionAcciones;
@@ -382,6 +387,314 @@ namespace SistemaBancaEnLinea.BW
             return ms.ToArray();
         }
 
+        /// <summary>
+        /// Genera extracto de cuenta con validación de acceso
+        /// </summary>
+        public async Task<(byte[]? archivo, string? numeroCuenta)> GenerarExtractoConAccesoAsync(
+            int cuentaId, DateTime? startDate, DateTime? endDate, string format, int usuarioId, string rol)
+        {
+            var cuenta = await _cuentaAcciones.ObtenerPorIdAsync(cuentaId);
+            if (cuenta == null)
+                throw new InvalidOperationException("Cuenta no encontrada.");
+
+            // Validar acceso
+            if (!await ValidarAccesoACuentaAsync(cuenta.ClienteId, usuarioId, rol))
+                throw new UnauthorizedAccessException("No tiene acceso a esta cuenta.");
+
+            var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
+            var fin = endDate ?? DateTime.UtcNow;
+
+            byte[] archivo = format.ToLower() switch
+            {
+                "pdf" => await GenerarExtractoPdfAsync(cuentaId, inicio, fin),
+                "csv" => await GenerarExtractoCsvAsync(cuentaId, inicio, fin),
+                _ => null
+            };
+
+            return (archivo, cuenta.Numero);
+        }
+
+        /// <summary>
+        /// Genera resumen para usuario autenticado
+        /// </summary>
+        public async Task<byte[]?> GenerarResumenParaUsuarioAsync(int usuarioId, string format)
+        {
+            var cliente = await _context.Clientes
+                .Include(c => c.UsuarioAsociado)
+                .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuarioId);
+
+            if (cliente == null)
+                throw new InvalidOperationException("Cliente no identificado.");
+
+            return format.ToLower() == "pdf"
+                ? await GenerarResumenClientePdfAsync(cliente.Id)
+                : null;
+        }
+
+        /// <summary>
+        /// Genera reporte de transacciones con filtros y validación de acceso
+        /// </summary>
+        public async Task<object> GenerarReporteTransaccionesAsync(
+            DateTime inicio, DateTime fin, string? tipo, string? estado, int? clienteId, int usuarioId, string rol)
+        {
+            List<Transaccion> transacciones;
+
+            if (clienteId.HasValue)
+            {
+                transacciones = await _transaccionAcciones.FiltrarHistorialAsync(
+                    clienteId.Value, null, inicio, fin, tipo, estado);
+            }
+            else
+            {
+                if (rol == "Gestor")
+                {
+                    // Obtener transacciones de clientes del gestor
+                    var clientesGestor = await _context.Clientes
+                        .Where(c => c.GestorAsignado != null && c.GestorAsignado.Id == usuarioId)
+                        .Select(c => c.Id)
+                        .ToListAsync();
+
+                    transacciones = new List<Transaccion>();
+                    foreach (var cId in clientesGestor)
+                    {
+                        var trans = await _transaccionAcciones.FiltrarHistorialAsync(
+                            cId, null, inicio, fin, tipo, estado);
+                        transacciones.AddRange(trans);
+                    }
+                }
+                else
+                {
+                    transacciones = new List<Transaccion>();
+                }
+            }
+
+            // Aplicar filtros adicionales
+            if (!string.IsNullOrEmpty(tipo))
+                transacciones = transacciones.Where(t => t.Tipo == tipo).ToList();
+
+            if (!string.IsNullOrEmpty(estado))
+                transacciones = transacciones.Where(t => t.Estado == estado).ToList();
+
+            var resumen = new
+            {
+                totalTransacciones = transacciones.Count,
+                montoTotal = transacciones.Where(t => t.Estado == "Exitosa").Sum(t => t.Monto),
+                comisionesTotal = 0,
+                porTipo = transacciones.GroupBy(t => t.Tipo).Select(g => new
+                {
+                    tipo = g.Key,
+                    cantidad = g.Count(),
+                    monto = g.Sum(t => t.Monto)
+                }),
+                porEstado = transacciones.GroupBy(t => t.Estado).Select(g => new
+                {
+                    estado = g.Key,
+                    cantidad = g.Count()
+                })
+            };
+
+            return new
+            {
+                success = true,
+                data = new
+                {
+                    periodo = new { desde = inicio, hasta = fin },
+                    resumen,
+                    transacciones = transacciones.Select(t => new
+                    {
+                        id = t.Id,
+                        fecha = t.FechaCreacion,
+                        tipo = t.Tipo,
+                        clienteNombre = t.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
+                        monto = t.Monto,
+                        moneda = t.Moneda,
+                        comision = 0,
+                        estado = t.Estado,
+                        referencia = t.ComprobanteReferencia
+                    }).OrderByDescending(t => t.fecha)
+                }
+            };
+        }
+
+        /// <summary>
+        /// Genera estadísticas para dashboard de administrador
+        /// </summary>
+        public async Task<object> GenerarEstadisticasDashboardAsync()
+        {
+            var clientes = await _clienteAcciones.ObtenerTodosAsync();
+
+            var hoy = DateTime.UtcNow.Date;
+            var inicioMes = new DateTime(hoy.Year, hoy.Month, 1);
+
+            return new
+            {
+                clientes = new
+                {
+                    total = clientes.Count,
+                    activos = clientes.Count(c => c.Estado == "Activo"),
+                    nuevosEsteMes = clientes.Count(c => c.FechaRegistro >= inicioMes)
+                }
+            };
+        }
+
+        /// <summary>
+        /// Genera reporte de volumen de transacciones diarias
+        /// </summary>
+        public async Task<object> GenerarVolumenDiarioAsync(DateTime inicio, DateTime fin, int usuarioId)
+        {
+            var transacciones = await ObtenerTransaccionesGestorAsync(usuarioId, inicio, fin);
+
+            var volumenDiario = transacciones
+                .Where(t => t.Estado == "Exitosa")
+                .GroupBy(t => t.FechaCreacion.Date)
+                .Select(g => new
+                {
+                    fecha = g.Key,
+                    cantidadTransacciones = g.Count(),
+                    montoTotalCRC = g.Where(t => t.Moneda == "CRC").Sum(t => t.Monto),
+                    montoTotalUSD = g.Where(t => t.Moneda == "USD").Sum(t => t.Monto),
+                    comisionesTotales = g.Sum(t => t.Comision)
+                })
+                .OrderBy(x => x.fecha)
+                .ToList();
+
+            var resumen = new
+            {
+                periodo = new { desde = inicio, hasta = fin },
+                totalDias = volumenDiario.Count,
+                promedioDiarioCantidad = volumenDiario.Any() ? volumenDiario.Average(v => v.cantidadTransacciones) : 0,
+                promedioDiarioMontoCRC = volumenDiario.Any() ? volumenDiario.Average(v => v.montoTotalCRC) : 0,
+                promedioDiarioMontoUSD = volumenDiario.Any() ? volumenDiario.Average(v => v.montoTotalUSD) : 0
+            };
+
+            return new
+            {
+                success = true,
+                data = new
+                {
+                    resumen,
+                    volumenDiario
+                }
+            };
+        }
+
+        /// <summary>
+        /// Genera reporte de clientes más activos
+        /// </summary>
+        public async Task<object> GenerarClientesMasActivosAsync(DateTime inicio, DateTime fin, int top, int usuarioId)
+        {
+            var transacciones = await ObtenerTransaccionesGestorAsync(usuarioId, inicio, fin);
+
+            var clientesActivos = transacciones
+                .Where(t => t.Cliente != null)
+                .GroupBy(t => new
+                {
+                    ClienteId = t.Cliente!.Id,
+                    ClienteNombre = t.Cliente.UsuarioAsociado != null ? t.Cliente.UsuarioAsociado.Nombre : "N/A",
+                    ClienteEmail = t.Cliente.UsuarioAsociado != null ? t.Cliente.UsuarioAsociado.Email : "N/A"
+                })
+                .Select(g => new
+                {
+                    clienteId = g.Key.ClienteId,
+                    clienteNombre = g.Key.ClienteNombre,
+                    clienteEmail = g.Key.ClienteEmail,
+                    totalTransacciones = g.Count(),
+                    transaccionesExitosas = g.Count(t => t.Estado == "Exitosa"),
+                    montoTotalCRC = g.Where(t => t.Moneda == "CRC" && t.Estado == "Exitosa").Sum(t => t.Monto),
+                    montoTotalUSD = g.Where(t => t.Moneda == "USD" && t.Estado == "Exitosa").Sum(t => t.Monto),
+                    ultimaTransaccion = g.Max(t => t.FechaCreacion)
+                })
+                .OrderByDescending(c => c.totalTransacciones)
+                .Take(top)
+                .ToList();
+
+            return new
+            {
+                success = true,
+                data = new
+                {
+                    periodo = new { desde = inicio, hasta = fin },
+                    top,
+                    clientesMasActivos = clientesActivos
+                }
+            };
+        }
+
+        /// <summary>
+        /// Genera reporte de totales por período
+        /// </summary>
+        public async Task<object> GenerarTotalesPorPeriodoAsync(DateTime inicio, DateTime fin, int usuarioId)
+        {
+            var transacciones = await ObtenerTransaccionesGestorAsync(usuarioId, inicio, fin);
+
+            var totales = new
+            {
+                periodo = new { desde = inicio, hasta = fin },
+                transacciones = new
+                {
+                    total = transacciones.Count,
+                    exitosas = transacciones.Count(t => t.Estado == "Exitosa"),
+                    fallidas = transacciones.Count(t => t.Estado == "Fallida"),
+                    pendientes = transacciones.Count(t => t.Estado == "Pendiente")
+                },
+                montos = new
+                {
+                    totalCRC = transacciones.Where(t => t.Moneda == "CRC" && t.Estado == "Exitosa").Sum(t => t.Monto),
+                    totalUSD = transacciones.Where(t => t.Moneda == "USD" && t.Estado == "Exitosa").Sum(t => t.Monto),
+                    comisionesTotales = transacciones.Where(t => t.Estado == "Exitosa").Sum(t => t.Comision)
+                },
+                porTipo = transacciones
+                    .Where(t => t.Estado == "Exitosa")
+                    .GroupBy(t => t.Tipo)
+                    .Select(g => new
+                    {
+                        tipo = g.Key,
+                        cantidad = g.Count(),
+                        montoCRC = g.Where(t => t.Moneda == "CRC").Sum(t => t.Monto),
+                        montoUSD = g.Where(t => t.Moneda == "USD").Sum(t => t.Monto)
+                    })
+                    .ToList()
+            };
+
+            return totales;
+        }
+
+        #region Métodos Privados de Validación y Utilidades
+
+        private async Task<bool> ValidarAccesoACuentaAsync(int cuentaClienteId, int usuarioId, string rol)
+        {
+            if (rol is "Administrador" or "Gestor")
+                return true;
+
+            var cliente = await _context.Clientes
+                .Include(c => c.UsuarioAsociado)
+                .FirstOrDefaultAsync(c => c.UsuarioAsociado != null && c.UsuarioAsociado.Id == usuarioId);
+
+            return cliente != null && cliente.Id == cuentaClienteId;
+        }
+
+        private async Task<List<Transaccion>> ObtenerTransaccionesGestorAsync(int usuarioId, DateTime inicio, DateTime fin)
+        {
+            var clientesGestor = await _context.Clientes
+                .Where(c => c.GestorAsignado != null && c.GestorAsignado.Id == usuarioId)
+                .Select(c => c.Id)
+                .ToListAsync();
+
+            var transacciones = new List<Transaccion>();
+            foreach (var clienteId in clientesGestor)
+            {
+                var trans = await _transaccionAcciones.FiltrarHistorialAsync(
+                    clienteId, null, inicio, fin, null, null);
+                transacciones.AddRange(trans);
+            }
+
+            return transacciones;
+        }
+
+        #endregion
+
+        #region Métodos Privados PDF
+
         private static Cell CrearCeldaInfo(string texto, PdfFont font)
         {
             return new Cell()
@@ -414,5 +727,7 @@ namespace SistemaBancaEnLinea.BW
                 .Add(new Paragraph(texto).SetFont(font).SetFontSize(8))
                 .SetPadding(3);
         }
+
+        #endregion
     }
 }

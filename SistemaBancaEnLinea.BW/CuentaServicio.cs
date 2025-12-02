@@ -195,6 +195,10 @@ namespace SistemaBancaEnLinea.BW
                 if (!CuentasReglas.PuedeCerrarse(cuenta))
                     throw new InvalidOperationException("Solo se pueden cerrar cuentas con saldo 0.");
 
+                // RF-B3: Validar que no tenga operaciones pendientes
+                if (await _cuentaAcciones.TieneOperacionesPendientesAsync(id))
+                    throw new InvalidOperationException("No se puede cerrar una cuenta con operaciones pendientes.");
+
                 cuenta.Estado = "Cerrada";
                 await _cuentaAcciones.ActualizarAsync(cuenta);
 

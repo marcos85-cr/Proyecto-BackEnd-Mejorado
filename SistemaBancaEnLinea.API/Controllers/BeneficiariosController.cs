@@ -38,17 +38,11 @@ namespace SistemaBancaEnLinea.API.Controllers
         {
             try
             {
-                var clienteId = await GetClienteIdAsync();
-                if (clienteId == 0)
-                    return Unauthorized(ApiResponse.Fail("Cliente no identificado."));
-
+                var usuarioId = GetUsuarioId();
                 var beneficiario = _mapper.Map<Beneficiario>(request);
-                beneficiario.ClienteId = clienteId;
-                
-                var beneficiarioCreado = await _beneficiarioServicio.CrearBeneficiarioAsync(beneficiario);
 
-                await _auditoriaServicio.RegistrarAsync(
-                    GetUsuarioId(), "CreacionBeneficiario", $"Beneficiario {request.Alias} creado");
+                var beneficiarioCreado = await _beneficiarioServicio.CrearBeneficiarioParaUsuarioAsync(
+                    beneficiario, usuarioId);
 
                 return CreatedAtAction(nameof(ObtenerBeneficiario), new { id = beneficiarioCreado.Id },
                     ApiResponse<BeneficiarioCreacionDto>.Ok(
@@ -92,6 +86,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         }
 
         [HttpPut("{id}/confirmar")]
+        [Authorize(Roles = "Administrador")]
         public async Task<IActionResult> ConfirmarBeneficiario(int id)
         {
             try
