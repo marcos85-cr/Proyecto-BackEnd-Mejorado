@@ -104,7 +104,7 @@ builder.Services.AddSwaggerGen(c =>
     {
         Title = "Sistema Banca en L�nea API",
         Version = "v1",
-        Description = "API REST para el sistema de banca en l�nea - Proyecto SOF-18"
+        Description = "API REST para el sistema de banca en línea - Proyecto SOF-18"
     });
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
