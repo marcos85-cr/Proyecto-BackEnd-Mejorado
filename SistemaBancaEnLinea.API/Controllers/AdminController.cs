@@ -18,6 +18,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         private readonly ITransferenciasServicio _transferenciasServicio;
         private readonly IProveedorServicioServicio _proveedorServicio;
         private readonly IAuditoriaServicio _auditoriaServicio;
+        private readonly IReportesServicio _reportesServicio;
         private readonly IMapper _mapper;
         private readonly ILogger<AdminController> _logger;
 
@@ -28,6 +29,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             ITransferenciasServicio transferenciasServicio,
             IProveedorServicioServicio proveedorServicio,
             IAuditoriaServicio auditoriaServicio,
+            IReportesServicio reportesServicio,
             IMapper mapper,
             ILogger<AdminController> logger)
         {
@@ -37,6 +39,7 @@ namespace SistemaBancaEnLinea.API.Controllers
             _transferenciasServicio = transferenciasServicio;
             _proveedorServicio = proveedorServicio;
             _auditoriaServicio = auditoriaServicio;
+            _reportesServicio = reportesServicio;
             _mapper = mapper;
             _logger = logger;
         }
@@ -282,11 +285,19 @@ namespace SistemaBancaEnLinea.API.Controllers
             }
         }
 
+        #endregion
+
+        #region RF-G2: Auditoría
+
+        /// <summary>
+        /// RF-G2: Obtener auditoría con filtros y opción de exportación
+        /// </summary>
         [HttpGet("auditoria")]
         public async Task<IActionResult> ObtenerAuditoria(
             [FromQuery] DateOnly? fechaInicio,
             [FromQuery] DateOnly? fechaFin,
-            [FromQuery] string? tipoOperacion)
+            [FromQuery] string? tipoOperacion,
+            [FromQuery] string format = "json")
         {
             try
             {
@@ -295,6 +306,22 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var fin = fechaFin?.ToDateTime(TimeOnly.MaxValue) ?? DateTime.UtcNow.Date.AddDays(1).AddTicks(-1);
                 var currentAdminId = GetCurrentUserId();
 
+                // Exportación a PDF
+                if (format.ToLower() == "pdf")
+                {
+                    var pdfBytes = await _reportesServicio.ExportarAuditoriaPdfAsync(inicio, fin, tipoOperacion);
+                    return File(pdfBytes, "application/pdf", $"auditoria_{inicio:yyyyMMdd}_{fin:yyyyMMdd}.pdf");
+                }
+
+                // Exportación a Excel
+                if (format.ToLower() == "xlsx" || format.ToLower() == "excel")
+                {
+                    var excelBytes = await _reportesServicio.ExportarAuditoriaExcelAsync(inicio, fin, tipoOperacion);
+                    return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                        $"auditoria_{inicio:yyyyMMdd}_{fin:yyyyMMdd}.xlsx");
+                }
+
+                // JSON
                 var registros = await _auditoriaServicio.ObtenerPorFechasAsync(inicio, fin, tipoOperacion);
 
                 var otrosAdmins = await _usuarioServicio.ObtenerPorRolAsync("Administrador");

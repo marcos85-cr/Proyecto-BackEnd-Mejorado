@@ -29,5 +29,17 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
         Task<object> GenerarClientesMasActivosAsync(DateTime inicio, DateTime fin, int top, int usuarioId, string rol);
 
         Task<object> GenerarTotalesPorPeriodoAsync(DateTime inicio, DateTime fin, int usuarioId, string rol);
+
+        // RF-G1: Exportación de reportes para Administrador
+        Task<byte[]> ExportarTotalesPorPeriodoPdfAsync(DateTime inicio, DateTime fin);
+        Task<byte[]> ExportarTotalesPorPeriodoExcelAsync(DateTime inicio, DateTime fin);
+        Task<byte[]> ExportarTopClientesPdfAsync(DateTime inicio, DateTime fin, int top);
+        Task<byte[]> ExportarTopClientesExcelAsync(DateTime inicio, DateTime fin, int top);
+        Task<byte[]> ExportarVolumenDiarioPdfAsync(DateTime inicio, DateTime fin);
+        Task<byte[]> ExportarVolumenDiarioExcelAsync(DateTime inicio, DateTime fin);
+
+        // RF-G2: Exportación de auditoría para Administrador
+        Task<byte[]> ExportarAuditoriaPdfAsync(DateTime inicio, DateTime fin, string? tipoOperacion);
+        Task<byte[]> ExportarAuditoriaExcelAsync(DateTime inicio, DateTime fin, string? tipoOperacion);
     }
 }

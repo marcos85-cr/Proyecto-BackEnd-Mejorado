@@ -1,5 +1,6 @@
 using iTextSharp.text;
 using iTextSharp.text.pdf;
+using ClosedXML.Excel;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using SistemaBancaEnLinea.BC.Modelos;
@@ -732,6 +733,615 @@ namespace SistemaBancaEnLinea.BW
             }
 
             return new List<Transaccion>();
+        }
+
+        #endregion
+
+        #region RF-G1: Exportación de Reportes Administrativos
+
+        /// <summary>
+        /// RF-G1: Exportar totales por período a PDF
+        /// </summary>
+        public async Task<byte[]> ExportarTotalesPorPeriodoPdfAsync(DateTime inicio, DateTime fin)
+        {
+            var transacciones = await _context.Transacciones
+                .Where(t => t.FechaCreacion >= inicio && t.FechaCreacion <= fin)
+                .ToListAsync();
+
+            using var ms = new MemoryStream();
+            var document = new Document(PageSize.A4, 36, 36, 54, 54);
+            PdfWriter.GetInstance(document, ms);
+            document.Open();
+
+            var fontTitle = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 18);
+            var fontSubtitle = FontFactory.GetFont(FontFactory.HELVETICA, 12);
+            var fontBold = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 10);
+            var fontNormal = FontFactory.GetFont(FontFactory.HELVETICA, 10);
+
+            document.Add(new Paragraph("Reporte de Totales por Período", fontTitle) { Alignment = Element.ALIGN_CENTER });
+            document.Add(new Paragraph($"Período: {inicio:dd/MM/yyyy} - {fin:dd/MM/yyyy}", fontSubtitle) { Alignment = Element.ALIGN_CENTER, SpacingAfter = 20 });
+            document.Add(new Paragraph($"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}", fontSubtitle) { Alignment = Element.ALIGN_RIGHT, SpacingAfter = 20 });
+
+            // Resumen general
+            var totalOperaciones = transacciones.Count;
+            var volumenTotal = transacciones.Sum(t => t.Monto);
+            var exitosas = transacciones.Count(t => t.Estado == "Exitosa");
+            var fallidas = transacciones.Count(t => t.Estado == "Fallida");
+
+            var resumenTable = new PdfPTable(2) { WidthPercentage = 60, SpacingAfter = 20 };
+            resumenTable.AddCell(new PdfPCell(new Phrase("Métrica", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8 });
+            resumenTable.AddCell(new PdfPCell(new Phrase("Valor", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8 });
+            resumenTable.AddCell(new PdfPCell(new Phrase("Total Operaciones", fontNormal)) { Padding = 5 });
+            resumenTable.AddCell(new PdfPCell(new Phrase(totalOperaciones.ToString("N0"), fontNormal)) { Padding = 5 });
+            resumenTable.AddCell(new PdfPCell(new Phrase("Volumen Total", fontNormal)) { Padding = 5 });
+            resumenTable.AddCell(new PdfPCell(new Phrase($"₡ {volumenTotal:N2}", fontNormal)) { Padding = 5 });
+            resumenTable.AddCell(new PdfPCell(new Phrase("Operaciones Exitosas", fontNormal)) { Padding = 5 });
+            resumenTable.AddCell(new PdfPCell(new Phrase(exitosas.ToString("N0"), fontNormal)) { Padding = 5 });
+            resumenTable.AddCell(new PdfPCell(new Phrase("Operaciones Fallidas", fontNormal)) { Padding = 5 });
+            resumenTable.AddCell(new PdfPCell(new Phrase(fallidas.ToString("N0"), fontNormal)) { Padding = 5 });
+            document.Add(resumenTable);
+
+            // Desglose por tipo
+            document.Add(new Paragraph("Desglose por Tipo de Operación", fontBold) { SpacingBefore = 10, SpacingAfter = 10 });
+            var tiposTable = new PdfPTable(3) { WidthPercentage = 100, SpacingAfter = 20 };
+            tiposTable.AddCell(new PdfPCell(new Phrase("Tipo", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8 });
+            tiposTable.AddCell(new PdfPCell(new Phrase("Cantidad", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8 });
+            tiposTable.AddCell(new PdfPCell(new Phrase("Monto Total", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8 });
+
+            var porTipo = transacciones.GroupBy(t => t.Tipo).Select(g => new { Tipo = g.Key, Cantidad = g.Count(), Total = g.Sum(x => x.Monto) });
+            foreach (var tipo in porTipo)
+            {
+                tiposTable.AddCell(new PdfPCell(new Phrase(tipo.Tipo, fontNormal)) { Padding = 5 });
+                tiposTable.AddCell(new PdfPCell(new Phrase(tipo.Cantidad.ToString("N0"), fontNormal)) { Padding = 5 });
+                tiposTable.AddCell(new PdfPCell(new Phrase($"₡ {tipo.Total:N2}", fontNormal)) { Padding = 5 });
+            }
+            document.Add(tiposTable);
+
+            document.Close();
+            return ms.ToArray();
+        }
+
+        /// <summary>
+        /// RF-G1: Exportar totales por período a Excel
+        /// </summary>
+        public async Task<byte[]> ExportarTotalesPorPeriodoExcelAsync(DateTime inicio, DateTime fin)
+        {
+            var transacciones = await _context.Transacciones
+                .Include(t => t.Cliente).ThenInclude(c => c!.UsuarioAsociado)
+                .Where(t => t.FechaCreacion >= inicio && t.FechaCreacion <= fin)
+                .OrderByDescending(t => t.FechaCreacion)
+                .ToListAsync();
+
+            using var workbook = new XLWorkbook();
+            
+            // Hoja de Resumen
+            var wsResumen = workbook.Worksheets.Add("Resumen");
+            wsResumen.Cell(1, 1).Value = "Reporte de Totales por Período";
+            wsResumen.Cell(1, 1).Style.Font.Bold = true;
+            wsResumen.Cell(1, 1).Style.Font.FontSize = 16;
+            wsResumen.Cell(2, 1).Value = $"Período: {inicio:dd/MM/yyyy} - {fin:dd/MM/yyyy}";
+            wsResumen.Cell(3, 1).Value = $"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}";
+
+            wsResumen.Cell(5, 1).Value = "Métrica";
+            wsResumen.Cell(5, 2).Value = "Valor";
+            wsResumen.Range("A5:B5").Style.Font.Bold = true;
+            wsResumen.Range("A5:B5").Style.Fill.BackgroundColor = XLColor.LightGray;
+            wsResumen.Range("A5:B5").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            wsResumen.Range("A5:B5").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+            wsResumen.Cell(6, 1).Value = "Total Operaciones";
+            wsResumen.Cell(6, 2).Value = transacciones.Count;
+            wsResumen.Cell(7, 1).Value = "Volumen Total";
+            wsResumen.Cell(7, 2).Value = transacciones.Sum(t => t.Monto);
+            wsResumen.Cell(7, 2).Style.NumberFormat.Format = "₡ #,##0.00";
+            wsResumen.Cell(8, 1).Value = "Operaciones Exitosas";
+            wsResumen.Cell(8, 2).Value = transacciones.Count(t => t.Estado == "Exitosa");
+            wsResumen.Cell(9, 1).Value = "Operaciones Fallidas";
+            wsResumen.Cell(9, 2).Value = transacciones.Count(t => t.Estado == "Fallida");
+
+            // Aplicar bordes a la tabla de métricas
+            wsResumen.Range("A6:B9").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            wsResumen.Range("A6:B9").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+            // Desglose por tipo
+            wsResumen.Cell(11, 1).Value = "Tipo";
+            wsResumen.Cell(11, 2).Value = "Cantidad";
+            wsResumen.Cell(11, 3).Value = "Monto Total";
+            wsResumen.Range("A11:C11").Style.Font.Bold = true;
+            wsResumen.Range("A11:C11").Style.Fill.BackgroundColor = XLColor.LightGray;
+            wsResumen.Range("A11:C11").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            wsResumen.Range("A11:C11").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+            var row = 12;
+            var startRow = row;
+            foreach (var grupo in transacciones.GroupBy(t => t.Tipo))
+            {
+                wsResumen.Cell(row, 1).Value = grupo.Key;
+                wsResumen.Cell(row, 2).Value = grupo.Count();
+                wsResumen.Cell(row, 3).Value = grupo.Sum(t => t.Monto);
+                wsResumen.Cell(row, 3).Style.NumberFormat.Format = "₡ #,##0.00";
+                row++;
+            }
+
+            // Aplicar bordes a la tabla de desglose por tipo
+            if (row > startRow)
+            {
+                wsResumen.Range($"A{startRow}:C{row - 1}").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                wsResumen.Range($"A{startRow}:C{row - 1}").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            }
+
+            // Ajustar ancho de columnas
+            wsResumen.Column(1).Width = 30;
+            wsResumen.Column(2).Width = 20;
+            wsResumen.Column(3).Width = 20;
+
+            // Hoja de Detalle
+            var wsDetalle = workbook.Worksheets.Add("Detalle");
+            wsDetalle.Cell(1, 1).Value = "ID";
+            wsDetalle.Cell(1, 2).Value = "Fecha";
+            wsDetalle.Cell(1, 3).Value = "Tipo";
+            wsDetalle.Cell(1, 4).Value = "Estado";
+            wsDetalle.Cell(1, 5).Value = "Cliente";
+            wsDetalle.Cell(1, 6).Value = "Monto";
+            wsDetalle.Cell(1, 7).Value = "Moneda";
+            wsDetalle.Cell(1, 8).Value = "Descripción";
+            wsDetalle.Range("A1:H1").Style.Font.Bold = true;
+            wsDetalle.Range("A1:H1").Style.Fill.BackgroundColor = XLColor.LightGray;
+            wsDetalle.Range("A1:H1").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            wsDetalle.Range("A1:H1").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+            row = 2;
+            var startRowDetalle = row;
+            foreach (var t in transacciones)
+            {
+                wsDetalle.Cell(row, 1).Value = t.Id;
+                wsDetalle.Cell(row, 2).Value = t.FechaCreacion;
+                wsDetalle.Cell(row, 3).Value = t.Tipo;
+                wsDetalle.Cell(row, 4).Value = t.Estado;
+                wsDetalle.Cell(row, 5).Value = t.Cliente?.UsuarioAsociado?.Nombre ?? "N/A";
+                wsDetalle.Cell(row, 6).Value = t.Monto;
+                wsDetalle.Cell(row, 6).Style.NumberFormat.Format = "₡ #,##0.00";
+                wsDetalle.Cell(row, 7).Value = t.Moneda;
+                wsDetalle.Cell(row, 8).Value = t.Descripcion ?? "";
+                row++;
+            }
+
+            // Aplicar bordes a toda la tabla de detalle
+            if (row > startRowDetalle)
+            {
+                wsDetalle.Range($"A{startRowDetalle}:H{row - 1}").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                wsDetalle.Range($"A{startRowDetalle}:H{row - 1}").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            }
+
+            // Ajustar ancho de columnas
+            wsDetalle.Column(1).Width = 10;
+            wsDetalle.Column(2).Width = 20;
+            wsDetalle.Column(3).Width = 15;
+            wsDetalle.Column(4).Width = 15;
+            wsDetalle.Column(5).Width = 30;
+            wsDetalle.Column(6).Width = 20;
+            wsDetalle.Column(7).Width = 10;
+            wsDetalle.Column(8).Width = 40;
+
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            return stream.ToArray();
+        }
+
+        /// <summary>
+        /// RF-G1: Exportar Top Clientes a PDF
+        /// </summary>
+        public async Task<byte[]> ExportarTopClientesPdfAsync(DateTime inicio, DateTime fin, int top)
+        {
+            var transacciones = await _context.Transacciones
+                .Include(t => t.Cliente).ThenInclude(c => c!.UsuarioAsociado)
+                .Where(t => t.FechaCreacion >= inicio && t.FechaCreacion <= fin && t.Estado == "Exitosa")
+                .ToListAsync();
+
+            var topClientes = transacciones
+                .GroupBy(t => new { t.ClienteId, Nombre = t.Cliente?.UsuarioAsociado?.Nombre ?? "N/A" })
+                .Select(g => new { g.Key.ClienteId, g.Key.Nombre, Volumen = g.Sum(x => x.Monto), Operaciones = g.Count() })
+                .OrderByDescending(x => x.Volumen)
+                .Take(top)
+                .ToList();
+
+            using var ms = new MemoryStream();
+            var document = new Document(PageSize.A4, 36, 36, 54, 54);
+            PdfWriter.GetInstance(document, ms);
+            document.Open();
+
+            var fontTitle = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 18);
+            var fontSubtitle = FontFactory.GetFont(FontFactory.HELVETICA, 12);
+            var fontBold = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 10);
+            var fontNormal = FontFactory.GetFont(FontFactory.HELVETICA, 10);
+
+            document.Add(new Paragraph($"Top {top} Clientes por Volumen", fontTitle) { Alignment = Element.ALIGN_CENTER });
+            document.Add(new Paragraph($"Período: {inicio:dd/MM/yyyy} - {fin:dd/MM/yyyy}", fontSubtitle) { Alignment = Element.ALIGN_CENTER, SpacingAfter = 20 });
+            document.Add(new Paragraph($"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}", fontSubtitle) { Alignment = Element.ALIGN_RIGHT, SpacingAfter = 20 });
+
+            var table = new PdfPTable(4) { WidthPercentage = 100, SpacingAfter = 20 };
+            table.SetWidths(new float[] { 1, 3, 2, 2 });
+
+            table.AddCell(new PdfPCell(new Phrase("#", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8, HorizontalAlignment = Element.ALIGN_CENTER });
+            table.AddCell(new PdfPCell(new Phrase("Cliente", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8 });
+            table.AddCell(new PdfPCell(new Phrase("Volumen Total", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8, HorizontalAlignment = Element.ALIGN_RIGHT });
+            table.AddCell(new PdfPCell(new Phrase("Operaciones", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8, HorizontalAlignment = Element.ALIGN_CENTER });
+
+            var pos = 1;
+            foreach (var cliente in topClientes)
+            {
+                table.AddCell(new PdfPCell(new Phrase(pos.ToString(), fontNormal)) { Padding = 5, HorizontalAlignment = Element.ALIGN_CENTER });
+                table.AddCell(new PdfPCell(new Phrase(cliente.Nombre, fontNormal)) { Padding = 5 });
+                table.AddCell(new PdfPCell(new Phrase($"₡ {cliente.Volumen:N2}", fontNormal)) { Padding = 5, HorizontalAlignment = Element.ALIGN_RIGHT });
+                table.AddCell(new PdfPCell(new Phrase(cliente.Operaciones.ToString("N0"), fontNormal)) { Padding = 5, HorizontalAlignment = Element.ALIGN_CENTER });
+                pos++;
+            }
+
+            document.Add(table);
+            document.Close();
+            return ms.ToArray();
+        }
+
+        /// <summary>
+        /// RF-G1: Exportar Top Clientes a Excel
+        /// </summary>
+        public async Task<byte[]> ExportarTopClientesExcelAsync(DateTime inicio, DateTime fin, int top)
+        {
+            var transacciones = await _context.Transacciones
+                .Include(t => t.Cliente).ThenInclude(c => c!.UsuarioAsociado)
+                .Where(t => t.FechaCreacion >= inicio && t.FechaCreacion <= fin && t.Estado == "Exitosa")
+                .ToListAsync();
+
+            var topClientes = transacciones
+                .GroupBy(t => new { t.ClienteId, Nombre = t.Cliente?.UsuarioAsociado?.Nombre ?? "N/A" })
+                .Select(g => new { g.Key.ClienteId, g.Key.Nombre, Volumen = g.Sum(x => x.Monto), Operaciones = g.Count() })
+                .OrderByDescending(x => x.Volumen)
+                .Take(top)
+                .ToList();
+
+            using var workbook = new XLWorkbook();
+            var ws = workbook.Worksheets.Add("Top Clientes");
+
+            ws.Cell(1, 1).Value = $"Top {top} Clientes por Volumen";
+            ws.Cell(1, 1).Style.Font.Bold = true;
+            ws.Cell(1, 1).Style.Font.FontSize = 16;
+            ws.Cell(2, 1).Value = $"Período: {inicio:dd/MM/yyyy} - {fin:dd/MM/yyyy}";
+            ws.Cell(3, 1).Value = $"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}";
+
+            ws.Cell(5, 1).Value = "Posición";
+            ws.Cell(5, 2).Value = "Cliente";
+            ws.Cell(5, 3).Value = "Volumen Total";
+            ws.Cell(5, 4).Value = "Operaciones";
+            ws.Range("A5:D5").Style.Font.Bold = true;
+            ws.Range("A5:D5").Style.Fill.BackgroundColor = XLColor.LightGray;
+            ws.Range("A5:D5").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            ws.Range("A5:D5").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+            var row = 6;
+            var startRowData = row;
+            var pos = 1;
+            foreach (var cliente in topClientes)
+            {
+                ws.Cell(row, 1).Value = pos++;
+                ws.Cell(row, 2).Value = cliente.Nombre;
+                ws.Cell(row, 3).Value = cliente.Volumen;
+                ws.Cell(row, 3).Style.NumberFormat.Format = "₡ #,##0.00";
+                ws.Cell(row, 4).Value = cliente.Operaciones;
+                row++;
+            }
+
+            // Aplicar bordes a toda la tabla
+            if (row > startRowData)
+            {
+                ws.Range($"A{startRowData}:D{row - 1}").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                ws.Range($"A{startRowData}:D{row - 1}").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            }
+
+            // Ajustar ancho de columnas
+            ws.Column(1).Width = 12;
+            ws.Column(2).Width = 40;
+            ws.Column(3).Width = 20;
+            ws.Column(4).Width = 15;
+
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            return stream.ToArray();
+        }
+
+        /// <summary>
+        /// RF-G1: Exportar Volumen Diario a PDF
+        /// </summary>
+        public async Task<byte[]> ExportarVolumenDiarioPdfAsync(DateTime inicio, DateTime fin)
+        {
+            var transacciones = await _context.Transacciones
+                .Where(t => t.FechaCreacion >= inicio && t.FechaCreacion <= fin && t.Estado == "Exitosa")
+                .ToListAsync();
+
+            var volumenDiario = transacciones
+                .GroupBy(t => t.FechaCreacion.Date)
+                .Select(g => new { Fecha = g.Key, Volumen = g.Sum(x => x.Monto), Operaciones = g.Count() })
+                .OrderBy(x => x.Fecha)
+                .ToList();
+
+            using var ms = new MemoryStream();
+            var document = new Document(PageSize.A4, 36, 36, 54, 54);
+            PdfWriter.GetInstance(document, ms);
+            document.Open();
+
+            var fontTitle = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 18);
+            var fontSubtitle = FontFactory.GetFont(FontFactory.HELVETICA, 12);
+            var fontBold = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 10);
+            var fontNormal = FontFactory.GetFont(FontFactory.HELVETICA, 10);
+
+            document.Add(new Paragraph("Volumen Diario de Transacciones", fontTitle) { Alignment = Element.ALIGN_CENTER });
+            document.Add(new Paragraph($"Período: {inicio:dd/MM/yyyy} - {fin:dd/MM/yyyy}", fontSubtitle) { Alignment = Element.ALIGN_CENTER, SpacingAfter = 20 });
+            document.Add(new Paragraph($"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}", fontSubtitle) { Alignment = Element.ALIGN_RIGHT, SpacingAfter = 20 });
+
+            var table = new PdfPTable(3) { WidthPercentage = 100, SpacingAfter = 20 };
+
+            table.AddCell(new PdfPCell(new Phrase("Fecha", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8 });
+            table.AddCell(new PdfPCell(new Phrase("Operaciones", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8, HorizontalAlignment = Element.ALIGN_CENTER });
+            table.AddCell(new PdfPCell(new Phrase("Volumen", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8, HorizontalAlignment = Element.ALIGN_RIGHT });
+
+            foreach (var dia in volumenDiario)
+            {
+                table.AddCell(new PdfPCell(new Phrase(dia.Fecha.ToString("dd/MM/yyyy"), fontNormal)) { Padding = 5 });
+                table.AddCell(new PdfPCell(new Phrase(dia.Operaciones.ToString("N0"), fontNormal)) { Padding = 5, HorizontalAlignment = Element.ALIGN_CENTER });
+                table.AddCell(new PdfPCell(new Phrase($"₡ {dia.Volumen:N2}", fontNormal)) { Padding = 5, HorizontalAlignment = Element.ALIGN_RIGHT });
+            }
+
+            // Totales
+            table.AddCell(new PdfPCell(new Phrase("TOTAL", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8 });
+            table.AddCell(new PdfPCell(new Phrase(volumenDiario.Sum(d => d.Operaciones).ToString("N0"), fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8, HorizontalAlignment = Element.ALIGN_CENTER });
+            table.AddCell(new PdfPCell(new Phrase($"₡ {volumenDiario.Sum(d => d.Volumen):N2}", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 8, HorizontalAlignment = Element.ALIGN_RIGHT });
+
+            document.Add(table);
+            document.Close();
+            return ms.ToArray();
+        }
+
+        /// <summary>
+        /// RF-G1: Exportar Volumen Diario a Excel
+        /// </summary>
+        public async Task<byte[]> ExportarVolumenDiarioExcelAsync(DateTime inicio, DateTime fin)
+        {
+            var transacciones = await _context.Transacciones
+                .Where(t => t.FechaCreacion >= inicio && t.FechaCreacion <= fin && t.Estado == "Exitosa")
+                .ToListAsync();
+
+            var volumenDiario = transacciones
+                .GroupBy(t => t.FechaCreacion.Date)
+                .Select(g => new { Fecha = g.Key, Volumen = g.Sum(x => x.Monto), Operaciones = g.Count() })
+                .OrderBy(x => x.Fecha)
+                .ToList();
+
+            using var workbook = new XLWorkbook();
+            var ws = workbook.Worksheets.Add("Volumen Diario");
+
+            ws.Cell(1, 1).Value = "Volumen Diario de Transacciones";
+            ws.Cell(1, 1).Style.Font.Bold = true;
+            ws.Cell(1, 1).Style.Font.FontSize = 16;
+            ws.Cell(2, 1).Value = $"Período: {inicio:dd/MM/yyyy} - {fin:dd/MM/yyyy}";
+            ws.Cell(3, 1).Value = $"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}";
+
+            ws.Cell(5, 1).Value = "Fecha";
+            ws.Cell(5, 2).Value = "Operaciones";
+            ws.Cell(5, 3).Value = "Volumen";
+            ws.Range("A5:C5").Style.Font.Bold = true;
+            ws.Range("A5:C5").Style.Fill.BackgroundColor = XLColor.LightGray;
+            ws.Range("A5:C5").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            ws.Range("A5:C5").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+            var row = 6;
+            var startRowData = row;
+            foreach (var dia in volumenDiario)
+            {
+                ws.Cell(row, 1).Value = dia.Fecha;
+                ws.Cell(row, 1).Style.DateFormat.Format = "dd/MM/yyyy";
+                ws.Cell(row, 2).Value = dia.Operaciones;
+                ws.Cell(row, 3).Value = dia.Volumen;
+                ws.Cell(row, 3).Style.NumberFormat.Format = "₡ #,##0.00";
+                row++;
+            }
+
+            // Aplicar bordes a los datos
+            if (row > startRowData)
+            {
+                ws.Range($"A{startRowData}:C{row - 1}").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                ws.Range($"A{startRowData}:C{row - 1}").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            }
+
+            // Totales
+            ws.Cell(row, 1).Value = "TOTAL";
+            ws.Cell(row, 1).Style.Font.Bold = true;
+            ws.Cell(row, 2).Value = volumenDiario.Sum(d => d.Operaciones);
+            ws.Cell(row, 2).Style.Font.Bold = true;
+            ws.Cell(row, 3).Value = volumenDiario.Sum(d => d.Volumen);
+            ws.Cell(row, 3).Style.NumberFormat.Format = "₡ #,##0.00";
+            ws.Cell(row, 3).Style.Font.Bold = true;
+
+            // Aplicar bordes a los totales
+            ws.Range($"A{row}:C{row}").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            ws.Range($"A{row}:C{row}").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            ws.Range($"A{row}:C{row}").Style.Fill.BackgroundColor = XLColor.LightGray;
+
+            // Ajustar ancho de columnas
+            ws.Column(1).Width = 15;
+            ws.Column(2).Width = 15;
+            ws.Column(3).Width = 20;
+
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            return stream.ToArray();
+        }
+
+        #endregion
+
+        #region RF-G2: Exportación de Auditoría
+
+        /// <summary>
+        /// RF-G2: Exportar auditoría a PDF
+        /// </summary>
+        public async Task<byte[]> ExportarAuditoriaPdfAsync(DateTime inicio, DateTime fin, string? tipoOperacion)
+        {
+            var query = _context.RegistrosAuditoria
+                .Include(r => r.Usuario)
+                .Where(r => r.FechaHora >= inicio && r.FechaHora <= fin);
+
+            if (!string.IsNullOrEmpty(tipoOperacion))
+                query = query.Where(r => r.TipoOperacion == tipoOperacion);
+
+            var registros = await query.OrderByDescending(r => r.FechaHora).ToListAsync();
+
+            using var ms = new MemoryStream();
+            var document = new Document(PageSize.A4.Rotate(), 36, 36, 54, 54);
+            PdfWriter.GetInstance(document, ms);
+            document.Open();
+
+            var fontTitle = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 18);
+            var fontSubtitle = FontFactory.GetFont(FontFactory.HELVETICA, 12);
+            var fontBold = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 9);
+            var fontNormal = FontFactory.GetFont(FontFactory.HELVETICA, 9);
+
+            document.Add(new Paragraph("Reporte de Auditoría del Sistema", fontTitle) { Alignment = Element.ALIGN_CENTER });
+            document.Add(new Paragraph($"Período: {inicio:dd/MM/yyyy} - {fin:dd/MM/yyyy}", fontSubtitle) { Alignment = Element.ALIGN_CENTER });
+            if (!string.IsNullOrEmpty(tipoOperacion))
+                document.Add(new Paragraph($"Filtro: {tipoOperacion}", fontSubtitle) { Alignment = Element.ALIGN_CENTER });
+            document.Add(new Paragraph($"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}", fontSubtitle) { Alignment = Element.ALIGN_RIGHT, SpacingAfter = 20 });
+            document.Add(new Paragraph($"Total de registros: {registros.Count}", fontSubtitle) { SpacingAfter = 15 });
+
+            var table = new PdfPTable(5) { WidthPercentage = 100, SpacingAfter = 20 };
+            table.SetWidths(new float[] { 2, 2, 2, 2, 4 });
+
+            table.AddCell(new PdfPCell(new Phrase("Fecha/Hora", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 6 });
+            table.AddCell(new PdfPCell(new Phrase("Usuario", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 6 });
+            table.AddCell(new PdfPCell(new Phrase("Email", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 6 });
+            table.AddCell(new PdfPCell(new Phrase("Operación", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 6 });
+            table.AddCell(new PdfPCell(new Phrase("Descripción", fontBold)) { BackgroundColor = BaseColor.LIGHT_GRAY, Padding = 6 });
+
+            foreach (var reg in registros)
+            {
+                table.AddCell(new PdfPCell(new Phrase(reg.FechaHora.ToString("dd/MM/yyyy HH:mm"), fontNormal)) { Padding = 4 });
+                table.AddCell(new PdfPCell(new Phrase(reg.Usuario?.Nombre ?? "N/A", fontNormal)) { Padding = 4 });
+                table.AddCell(new PdfPCell(new Phrase(reg.Usuario?.Email ?? "N/A", fontNormal)) { Padding = 4 });
+                table.AddCell(new PdfPCell(new Phrase(reg.TipoOperacion, fontNormal)) { Padding = 4 });
+                table.AddCell(new PdfPCell(new Phrase(reg.Descripcion ?? "", fontNormal)) { Padding = 4 });
+            }
+
+            document.Add(table);
+            document.Close();
+            return ms.ToArray();
+        }
+
+        /// <summary>
+        /// RF-G2: Exportar auditoría a Excel
+        /// </summary>
+        public async Task<byte[]> ExportarAuditoriaExcelAsync(DateTime inicio, DateTime fin, string? tipoOperacion)
+        {
+            var query = _context.RegistrosAuditoria
+                .Include(r => r.Usuario)
+                .Where(r => r.FechaHora >= inicio && r.FechaHora <= fin);
+
+            if (!string.IsNullOrEmpty(tipoOperacion))
+                query = query.Where(r => r.TipoOperacion == tipoOperacion);
+
+            var registros = await query.OrderByDescending(r => r.FechaHora).ToListAsync();
+
+            using var workbook = new XLWorkbook();
+            var ws = workbook.Worksheets.Add("Auditoría");
+
+            ws.Cell(1, 1).Value = "Reporte de Auditoría del Sistema";
+            ws.Cell(1, 1).Style.Font.Bold = true;
+            ws.Cell(1, 1).Style.Font.FontSize = 16;
+            ws.Cell(2, 1).Value = $"Período: {inicio:dd/MM/yyyy} - {fin:dd/MM/yyyy}";
+            if (!string.IsNullOrEmpty(tipoOperacion))
+                ws.Cell(3, 1).Value = $"Filtro: {tipoOperacion}";
+            ws.Cell(4, 1).Value = $"Generado: {DateTime.Now:dd/MM/yyyy HH:mm}";
+            ws.Cell(4, 3).Value = $"Total registros: {registros.Count}";
+
+            var headerRow = 6;
+            ws.Cell(headerRow, 1).Value = "ID";
+            ws.Cell(headerRow, 2).Value = "Fecha/Hora";
+            ws.Cell(headerRow, 3).Value = "Usuario ID";
+            ws.Cell(headerRow, 4).Value = "Usuario";
+            ws.Cell(headerRow, 5).Value = "Email";
+            ws.Cell(headerRow, 6).Value = "Tipo Operación";
+            ws.Cell(headerRow, 7).Value = "Descripción";
+            ws.Cell(headerRow, 8).Value = "Detalle JSON";
+            ws.Range($"A{headerRow}:H{headerRow}").Style.Font.Bold = true;
+            ws.Range($"A{headerRow}:H{headerRow}").Style.Fill.BackgroundColor = XLColor.LightGray;
+            ws.Range($"A{headerRow}:H{headerRow}").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            ws.Range($"A{headerRow}:H{headerRow}").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+            var row = headerRow + 1;
+            var startRowData = row;
+            foreach (var reg in registros)
+            {
+                ws.Cell(row, 1).Value = reg.Id;
+                ws.Cell(row, 2).Value = reg.FechaHora;
+                ws.Cell(row, 2).Style.DateFormat.Format = "dd/MM/yyyy HH:mm:ss";
+                ws.Cell(row, 3).Value = reg.UsuarioId;
+                ws.Cell(row, 4).Value = reg.Usuario?.Nombre ?? "N/A";
+                ws.Cell(row, 5).Value = reg.Usuario?.Email ?? "N/A";
+                ws.Cell(row, 6).Value = reg.TipoOperacion;
+                ws.Cell(row, 7).Value = reg.Descripcion ?? "";
+                ws.Cell(row, 8).Value = reg.DetalleJson ?? "";
+                row++;
+            }
+
+            // Aplicar bordes a los datos
+            if (row > startRowData)
+            {
+                ws.Range($"A{startRowData}:H{row - 1}").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                ws.Range($"A{startRowData}:H{row - 1}").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            }
+
+            // Ajustar ancho de columnas
+            ws.Column(1).Width = 10;
+            ws.Column(2).Width = 20;
+            ws.Column(3).Width = 12;
+            ws.Column(4).Width = 30;
+            ws.Column(5).Width = 30;
+            ws.Column(6).Width = 20;
+            ws.Column(7).Width = 40;
+            ws.Column(8).Width = 50;
+
+            // Hoja de resumen por tipo de operación
+            var wsResumen = workbook.Worksheets.Add("Resumen por Tipo");
+            wsResumen.Cell(1, 1).Value = "Resumen por Tipo de Operación";
+            wsResumen.Cell(1, 1).Style.Font.Bold = true;
+            wsResumen.Cell(1, 1).Style.Font.FontSize = 14;
+
+            wsResumen.Cell(3, 1).Value = "Tipo Operación";
+            wsResumen.Cell(3, 2).Value = "Cantidad";
+            wsResumen.Range("A3:B3").Style.Font.Bold = true;
+            wsResumen.Range("A3:B3").Style.Fill.BackgroundColor = XLColor.LightGray;
+            wsResumen.Range("A3:B3").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            wsResumen.Range("A3:B3").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+            row = 4;
+            var startRowResumen = row;
+            foreach (var grupo in registros.GroupBy(r => r.TipoOperacion).OrderByDescending(g => g.Count()))
+            {
+                wsResumen.Cell(row, 1).Value = grupo.Key;
+                wsResumen.Cell(row, 2).Value = grupo.Count();
+                row++;
+            }
+
+            // Aplicar bordes a los datos del resumen
+            if (row > startRowResumen)
+            {
+                wsResumen.Range($"A{startRowResumen}:B{row - 1}").Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+                wsResumen.Range($"A{startRowResumen}:B{row - 1}").Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            }
+
+            // Ajustar ancho de columnas del resumen
+            wsResumen.Column(1).Width = 30;
+            wsResumen.Column(2).Width = 15;
+
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            return stream.ToArray();
         }
 
         #endregion

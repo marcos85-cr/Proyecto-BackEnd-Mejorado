@@ -163,13 +163,14 @@ namespace SistemaBancaEnLinea.API.Controllers
         }
 
         /// <summary>
-        /// RF-G1: Reporte de volumen de transacciones diarias
+        /// RF-G1: Reporte de totales por período
         /// </summary>
-        [HttpGet("daily-volume")]
+        [HttpGet("period-totals")]
         [Authorize(Roles = "Administrador,Gestor")]
-        public async Task<IActionResult> GetDailyTransactionVolume(
+        public async Task<IActionResult> GetPeriodTotals(
             [FromQuery] DateTime? startDate,
-            [FromQuery] DateTime? endDate)
+            [FromQuery] DateTime? endDate,
+            [FromQuery] string format = "json")
         {
             try
             {
@@ -178,6 +179,109 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var usuarioId = GetCurrentUserId();
                 var rol = GetUserRole();
 
+                // Exportación a PDF
+                if (format.ToLower() == "pdf")
+                {
+                    var pdfBytes = await _reportesServicio.ExportarTotalesPorPeriodoPdfAsync(inicio, fin);
+                    return File(pdfBytes, "application/pdf", $"totales_periodo_{inicio:yyyyMMdd}_{fin:yyyyMMdd}.pdf");
+                }
+
+                // Exportación a Excel
+                if (format.ToLower() == "xlsx" || format.ToLower() == "excel")
+                {
+                    var excelBytes = await _reportesServicio.ExportarTotalesPorPeriodoExcelAsync(inicio, fin);
+                    return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                        $"totales_periodo_{inicio:yyyyMMdd}_{fin:yyyyMMdd}.xlsx");
+                }
+
+                // JSON
+                var totales = await _reportesServicio.GenerarTotalesPorPeriodoAsync(inicio, fin, usuarioId, rol);
+                return Ok(ApiResponse<object>.Ok(totales));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generando reporte de totales por período");
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// RF-G1: Reporte de Top clientes por volumen - con exportación PDF/Excel
+        /// </summary>
+        [HttpGet("top-clients")]
+        [Authorize(Roles = "Administrador,Gestor")]
+        public async Task<IActionResult> GetTopClients(
+            [FromQuery] DateTime? startDate,
+            [FromQuery] DateTime? endDate,
+            [FromQuery] int top = 10,
+            [FromQuery] string format = "json")
+        {
+            try
+            {
+                var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
+                var fin = endDate ?? DateTime.UtcNow;
+                var usuarioId = GetCurrentUserId();
+                var rol = GetUserRole();
+
+                // Exportación a PDF
+                if (format.ToLower() == "pdf")
+                {
+                    var pdfBytes = await _reportesServicio.ExportarTopClientesPdfAsync(inicio, fin, top);
+                    return File(pdfBytes, "application/pdf", $"top_{top}_clientes_{inicio:yyyyMMdd}_{fin:yyyyMMdd}.pdf");
+                }
+
+                // Exportación a Excel
+                if (format.ToLower() == "xlsx" || format.ToLower() == "excel")
+                {
+                    var excelBytes = await _reportesServicio.ExportarTopClientesExcelAsync(inicio, fin, top);
+                    return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                        $"top_{top}_clientes_{inicio:yyyyMMdd}_{fin:yyyyMMdd}.xlsx");
+                }
+
+                // JSON
+                var reporte = await _reportesServicio.GenerarClientesMasActivosAsync(inicio, fin, top, usuarioId, rol);
+                return Ok(reporte);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error generando reporte de top clientes");
+                return StatusCode(500, ApiResponse.Fail(ex.Message));
+            }
+        }
+
+        /// <summary>
+        /// RF-G1: Reporte de volumen diario - con exportación PDF/Excel
+        /// </summary>
+        [HttpGet("daily-volume")]
+        [Authorize(Roles = "Administrador,Gestor")]
+        public async Task<IActionResult> GetDailyTransactionVolume(
+            [FromQuery] DateTime? startDate,
+            [FromQuery] DateTime? endDate,
+            [FromQuery] string format = "json")
+        {
+            try
+            {
+                var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
+                var fin = endDate ?? DateTime.UtcNow;
+                var usuarioId = GetCurrentUserId();
+                var rol = GetUserRole();
+
+                // Exportación a PDF
+                if (format.ToLower() == "pdf")
+                {
+                    var pdfBytes = await _reportesServicio.ExportarVolumenDiarioPdfAsync(inicio, fin);
+                    return File(pdfBytes, "application/pdf", $"volumen_diario_{inicio:yyyyMMdd}_{fin:yyyyMMdd}.pdf");
+                }
+
+                // Exportación a Excel
+                if (format.ToLower() == "xlsx" || format.ToLower() == "excel")
+                {
+                    var excelBytes = await _reportesServicio.ExportarVolumenDiarioExcelAsync(inicio, fin);
+                    return File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", 
+                        $"volumen_diario_{inicio:yyyyMMdd}_{fin:yyyyMMdd}.xlsx");
+                }
+
+                // JSON
                 var reporte = await _reportesServicio.GenerarVolumenDiarioAsync(inicio, fin, usuarioId, rol);
                 return Ok(reporte);
             }
@@ -189,56 +293,17 @@ namespace SistemaBancaEnLinea.API.Controllers
         }
 
         /// <summary>
-        /// RF-G1: Reporte de clientes más activos
+        /// RF-G1: Reporte de clientes más activos (alias del anterior para compatibilidad)
         /// </summary>
         [HttpGet("most-active-clients")]
         [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> GetMostActiveClients(
             [FromQuery] DateTime? startDate,
             [FromQuery] DateTime? endDate,
-            [FromQuery] int top = 10)
+            [FromQuery] int top = 10,
+            [FromQuery] string format = "json")
         {
-            try
-            {
-                var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
-                var fin = endDate ?? DateTime.UtcNow;
-                var usuarioId = GetCurrentUserId();
-                var rol = GetUserRole();
-
-                var reporte = await _reportesServicio.GenerarClientesMasActivosAsync(inicio, fin, top, usuarioId, rol);
-                return Ok(reporte);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error generando reporte de clientes más activos");
-                return StatusCode(500, ApiResponse.Fail(ex.Message));
-            }
-        }
-
-        /// <summary>
-        /// RF-G1: Reporte de totales por período
-        /// </summary>
-        [HttpGet("period-totals")]
-        [Authorize(Roles = "Administrador,Gestor")]
-        public async Task<IActionResult> GetPeriodTotals(
-            [FromQuery] DateTime? startDate,
-            [FromQuery] DateTime? endDate)
-        {
-            try
-            {
-                var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
-                var fin = endDate ?? DateTime.UtcNow;
-                var usuarioId = GetCurrentUserId();
-                var rol = GetUserRole();
-
-                var totales = await _reportesServicio.GenerarTotalesPorPeriodoAsync(inicio, fin, usuarioId, rol);
-                return Ok(ApiResponse<object>.Ok(totales));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error generando reporte de totales por período");
-                return StatusCode(500, ApiResponse.Fail(ex.Message));
-            }
+            return await GetTopClients(startDate, endDate, top, format);
         }
 
         #region Helpers
