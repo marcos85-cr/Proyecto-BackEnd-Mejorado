@@ -1,10 +1,5 @@
-using iText.Kernel.Pdf;
-using iText.Layout;
-using iText.Layout.Element;
-using iText.Layout.Properties;
-using iText.Kernel.Colors;
-using iText.Kernel.Font;
-using iText.IO.Font.Constants;
+using iTextSharp.text;
+using iTextSharp.text.pdf;
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using SistemaBancaEnLinea.BC.Modelos;
@@ -96,113 +91,114 @@ namespace SistemaBancaEnLinea.BW
         {
             var extracto = await GenerarExtractoCuentaAsync(cuentaId, fechaInicio, fechaFin);
 
-            var ms = new MemoryStream();
-            var writer = new PdfWriter(ms);
-            var pdf = new PdfDocument(writer);
-            var document = new Document(pdf);
+            using var ms = new MemoryStream();
+            var document = new Document(PageSize.A4, 36, 36, 54, 54);
+            var writer = PdfWriter.GetInstance(document, ms);
+            document.Open();
 
-            try
+            var fontBold = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 10, BaseColor.BLACK);
+            var fontNormal = FontFactory.GetFont(FontFactory.HELVETICA, 10, BaseColor.BLACK);
+            var fontTitle = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 18, BaseColor.BLACK);
+            var fontSubtitle = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 14, BaseColor.BLACK);
+
+            // Encabezado
+            var titulo = new Paragraph("SISTEMA BANCA EN LINEA", fontTitle)
             {
-                var fontBold = PdfFontFactory.CreateFont(StandardFonts.HELVETICA_BOLD);
-                var fontNormal = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+                Alignment = Element.ALIGN_CENTER,
+                SpacingAfter = 10
+            };
+            document.Add(titulo);
 
-                // Encabezado
-                document.Add(new Paragraph("SISTEMA BANCA EN LINEA")
-                    .SetFont(fontBold)
-                    .SetFontSize(18)
-                    .SetTextAlignment(TextAlignment.CENTER));
-
-                document.Add(new Paragraph("Estado de Cuenta")
-                    .SetFont(fontBold)
-                    .SetFontSize(14)
-                    .SetTextAlignment(TextAlignment.CENTER)
-                    .SetMarginBottom(20));
-
-                // Información de cuenta
-                var infoCuenta = new Table(2).UseAllAvailableWidth();
-                infoCuenta.AddCell(CrearCeldaInfo("Numero de Cuenta:", fontBold));
-                infoCuenta.AddCell(CrearCeldaInfo(extracto.Cuenta.Numero ?? "N/A", fontNormal));
-                infoCuenta.AddCell(CrearCeldaInfo("Titular:", fontBold));
-                infoCuenta.AddCell(CrearCeldaInfo(extracto.Cuenta.Titular ?? "N/A", fontNormal));
-                infoCuenta.AddCell(CrearCeldaInfo("Tipo:", fontBold));
-                infoCuenta.AddCell(CrearCeldaInfo(extracto.Cuenta.Tipo ?? "N/A", fontNormal));
-                infoCuenta.AddCell(CrearCeldaInfo("Moneda:", fontBold));
-                infoCuenta.AddCell(CrearCeldaInfo(extracto.Cuenta.Moneda ?? "N/A", fontNormal));
-                infoCuenta.AddCell(CrearCeldaInfo("Periodo:", fontBold));
-                infoCuenta.AddCell(CrearCeldaInfo($"{extracto.Periodo.Desde:dd/MM/yyyy} - {extracto.Periodo.Hasta:dd/MM/yyyy}", fontNormal));
-                document.Add(infoCuenta);
-
-                document.Add(new Paragraph().SetMarginBottom(10));
-
-                // Resumen de saldos
-                var saldoTable = new Table(2).UseAllAvailableWidth();
-                saldoTable.AddCell(CrearCeldaResaltada("Saldo Inicial:", fontBold));
-                saldoTable.AddCell(CrearCeldaResaltada($"{extracto.Cuenta.Moneda ?? ""} {extracto.Saldo.Inicial:N2}", fontNormal));
-                saldoTable.AddCell(CrearCeldaResaltada("Saldo Final:", fontBold));
-                saldoTable.AddCell(CrearCeldaResaltada($"{extracto.Cuenta.Moneda ?? ""} {extracto.Saldo.Final:N2}", fontNormal));
-                document.Add(saldoTable);
-
-                document.Add(new Paragraph().SetMarginBottom(10));
-
-                // Tabla de movimientos
-                document.Add(new Paragraph("DETALLE DE MOVIMIENTOS")
-                    .SetFont(fontBold)
-                    .SetFontSize(12)
-                    .SetMarginTop(15)
-                    .SetMarginBottom(10));
-
-                var movTable = new Table(new float[] { 2, 2, 4, 2, 2, 2 }).UseAllAvailableWidth();
-
-                // Encabezados
-                movTable.AddHeaderCell(CrearCeldaEncabezado("Fecha", fontBold));
-                movTable.AddHeaderCell(CrearCeldaEncabezado("Tipo", fontBold));
-                movTable.AddHeaderCell(CrearCeldaEncabezado("Descripcion", fontBold));
-                movTable.AddHeaderCell(CrearCeldaEncabezado("Monto", fontBold));
-                movTable.AddHeaderCell(CrearCeldaEncabezado("Referencia", fontBold));
-                movTable.AddHeaderCell(CrearCeldaEncabezado("Estado", fontBold));
-
-                foreach (var mov in extracto.Movimientos)
-                {
-                    movTable.AddCell(CrearCeldaDato(mov.Fecha.ToString("dd/MM/yy"), fontNormal));
-                    movTable.AddCell(CrearCeldaDato(mov.Tipo ?? "-", fontNormal));
-                    movTable.AddCell(CrearCeldaDato(mov.Descripcion ?? "-", fontNormal));
-
-                    var montoCell = CrearCeldaDato($"{mov.Monto:N2}", fontNormal);
-                    if (mov.Monto < 0)
-                        montoCell.SetFontColor(new DeviceRgb(220, 53, 69));
-                    else
-                        montoCell.SetFontColor(new DeviceRgb(40, 167, 69));
-                    movTable.AddCell(montoCell);
-
-                    movTable.AddCell(CrearCeldaDato(mov.Referencia ?? "-", fontNormal));
-                    movTable.AddCell(CrearCeldaDato(mov.Estado ?? "-", fontNormal));
-                }
-
-                document.Add(movTable);
-
-                // Resumen
-                document.Add(new Paragraph().SetMarginTop(15));
-                var resumenTable = new Table(2).UseAllAvailableWidth();
-                resumenTable.AddCell(CrearCeldaInfo("Total Transacciones:", fontBold));
-                resumenTable.AddCell(CrearCeldaInfo(extracto.Resumen.TotalTransacciones.ToString(), fontNormal));
-                resumenTable.AddCell(CrearCeldaInfo("Total Debitos:", fontBold));
-                resumenTable.AddCell(CrearCeldaInfo($"{extracto.Cuenta.Moneda ?? ""} {extracto.Resumen.TotalDebitos:N2}", fontNormal));
-                resumenTable.AddCell(CrearCeldaInfo("Total Creditos:", fontBold));
-                resumenTable.AddCell(CrearCeldaInfo($"{extracto.Cuenta.Moneda ?? ""} {extracto.Resumen.TotalCreditos:N2}", fontNormal));
-                document.Add(resumenTable);
-
-                // Pie de página
-                document.Add(new Paragraph($"Generado el {DateTime.Now:dd/MM/yyyy HH:mm:ss}")
-                    .SetFont(fontNormal)
-                    .SetFontSize(8)
-                    .SetTextAlignment(TextAlignment.CENTER)
-                    .SetMarginTop(30));
-            }
-            finally
+            var subtitulo = new Paragraph("Estado de Cuenta", fontSubtitle)
             {
-                document.Close();
+                Alignment = Element.ALIGN_CENTER,
+                SpacingAfter = 20
+            };
+            document.Add(subtitulo);
+
+            // Información de cuenta
+            var infoCuenta = new PdfPTable(2) { WidthPercentage = 100, SpacingAfter = 10 };
+            infoCuenta.AddCell(new PdfPCell(new Phrase("Numero de Cuenta:", fontBold)) { Border = 0, Padding = 3 });
+            infoCuenta.AddCell(new PdfPCell(new Phrase(extracto.Cuenta.Numero ?? "N/A", fontNormal)) { Border = 0, Padding = 3 });
+            infoCuenta.AddCell(new PdfPCell(new Phrase("Titular:", fontBold)) { Border = 0, Padding = 3 });
+            infoCuenta.AddCell(new PdfPCell(new Phrase(extracto.Cuenta.Titular ?? "N/A", fontNormal)) { Border = 0, Padding = 3 });
+            infoCuenta.AddCell(new PdfPCell(new Phrase("Tipo:", fontBold)) { Border = 0, Padding = 3 });
+            infoCuenta.AddCell(new PdfPCell(new Phrase(extracto.Cuenta.Tipo ?? "N/A", fontNormal)) { Border = 0, Padding = 3 });
+            infoCuenta.AddCell(new PdfPCell(new Phrase("Moneda:", fontBold)) { Border = 0, Padding = 3 });
+            infoCuenta.AddCell(new PdfPCell(new Phrase(extracto.Cuenta.Moneda ?? "N/A", fontNormal)) { Border = 0, Padding = 3 });
+            infoCuenta.AddCell(new PdfPCell(new Phrase("Periodo:", fontBold)) { Border = 0, Padding = 3 });
+            infoCuenta.AddCell(new PdfPCell(new Phrase($"{extracto.Periodo.Desde:dd/MM/yyyy} - {extracto.Periodo.Hasta:dd/MM/yyyy}", fontNormal)) { Border = 0, Padding = 3 });
+            document.Add(infoCuenta);
+
+            // Resumen de saldos
+            var saldoTable = new PdfPTable(2) { WidthPercentage = 100, SpacingAfter = 10 };
+            var grayBg = new BaseColor(240, 240, 240);
+            saldoTable.AddCell(new PdfPCell(new Phrase("Saldo Inicial:", fontBold)) { BackgroundColor = grayBg, Padding = 5 });
+            saldoTable.AddCell(new PdfPCell(new Phrase($"{extracto.Cuenta.Moneda ?? ""} {extracto.Saldo.Inicial:N2}", fontNormal)) { BackgroundColor = grayBg, Padding = 5 });
+            saldoTable.AddCell(new PdfPCell(new Phrase("Saldo Final:", fontBold)) { BackgroundColor = grayBg, Padding = 5 });
+            saldoTable.AddCell(new PdfPCell(new Phrase($"{extracto.Cuenta.Moneda ?? ""} {extracto.Saldo.Final:N2}", fontNormal)) { BackgroundColor = grayBg, Padding = 5 });
+            document.Add(saldoTable);
+
+            // Tabla de movimientos
+            var movTitle = new Paragraph("DETALLE DE MOVIMIENTOS", fontBold)
+            {
+                SpacingBefore = 15,
+                SpacingAfter = 10
+            };
+            document.Add(movTitle);
+
+            var movTable = new PdfPTable(6) { WidthPercentage = 100 };
+            movTable.SetWidths(new float[] { 2, 2, 4, 2, 2, 2 });
+
+            var headerBg = new BaseColor(41, 128, 185);
+            var fontHeader = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 9, BaseColor.WHITE);
+
+            movTable.AddCell(new PdfPCell(new Phrase("Fecha", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+            movTable.AddCell(new PdfPCell(new Phrase("Tipo", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+            movTable.AddCell(new PdfPCell(new Phrase("Descripcion", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+            movTable.AddCell(new PdfPCell(new Phrase("Monto", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+            movTable.AddCell(new PdfPCell(new Phrase("Referencia", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+            movTable.AddCell(new PdfPCell(new Phrase("Estado", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+
+            var fontSmall = FontFactory.GetFont(FontFactory.HELVETICA, 8, BaseColor.BLACK);
+            var fontRed = FontFactory.GetFont(FontFactory.HELVETICA, 8, new BaseColor(220, 53, 69));
+            var fontGreen = FontFactory.GetFont(FontFactory.HELVETICA, 8, new BaseColor(40, 167, 69));
+
+            foreach (var mov in extracto.Movimientos)
+            {
+                movTable.AddCell(new PdfPCell(new Phrase(mov.Fecha.ToString("dd/MM/yy"), fontSmall)) { Padding = 3 });
+                movTable.AddCell(new PdfPCell(new Phrase(mov.Tipo ?? "-", fontSmall)) { Padding = 3 });
+                movTable.AddCell(new PdfPCell(new Phrase(mov.Descripcion ?? "-", fontSmall)) { Padding = 3 });
+
+                var montoFont = mov.Monto < 0 ? fontRed : fontGreen;
+                movTable.AddCell(new PdfPCell(new Phrase($"{mov.Monto:N2}", montoFont)) { Padding = 3 });
+
+                movTable.AddCell(new PdfPCell(new Phrase(mov.Referencia ?? "-", fontSmall)) { Padding = 3 });
+                movTable.AddCell(new PdfPCell(new Phrase(mov.Estado ?? "-", fontSmall)) { Padding = 3 });
             }
 
+            document.Add(movTable);
+
+            // Resumen
+            var resumenTable = new PdfPTable(2) { WidthPercentage = 100, SpacingBefore = 15 };
+            resumenTable.AddCell(new PdfPCell(new Phrase("Total Transacciones:", fontBold)) { Border = 0, Padding = 3 });
+            resumenTable.AddCell(new PdfPCell(new Phrase(extracto.Resumen.TotalTransacciones.ToString(), fontNormal)) { Border = 0, Padding = 3 });
+            resumenTable.AddCell(new PdfPCell(new Phrase("Total Debitos:", fontBold)) { Border = 0, Padding = 3 });
+            resumenTable.AddCell(new PdfPCell(new Phrase($"{extracto.Cuenta.Moneda ?? ""} {extracto.Resumen.TotalDebitos:N2}", fontNormal)) { Border = 0, Padding = 3 });
+            resumenTable.AddCell(new PdfPCell(new Phrase("Total Creditos:", fontBold)) { Border = 0, Padding = 3 });
+            resumenTable.AddCell(new PdfPCell(new Phrase($"{extracto.Cuenta.Moneda ?? ""} {extracto.Resumen.TotalCreditos:N2}", fontNormal)) { Border = 0, Padding = 3 });
+            document.Add(resumenTable);
+
+            // Pie de página
+            var fontFooter = FontFactory.GetFont(FontFactory.HELVETICA, 8, BaseColor.BLACK);
+            var footer = new Paragraph($"Generado el {DateTime.Now:dd/MM/yyyy HH:mm:ss}", fontFooter)
+            {
+                Alignment = Element.ALIGN_CENTER,
+                SpacingBefore = 30
+            };
+            document.Add(footer);
+
+            document.Close();
             return ms.ToArray();
         }
 
@@ -286,122 +282,136 @@ namespace SistemaBancaEnLinea.BW
         {
             var resumen = await GenerarResumenClienteAsync(clienteId);
 
-            var ms = new MemoryStream();
-            var writer = new PdfWriter(ms);
-            var pdf = new PdfDocument(writer);
-            var document = new Document(pdf);
+            using var ms = new MemoryStream();
+            var document = new Document(PageSize.A4, 36, 36, 54, 54);
+            var writer = PdfWriter.GetInstance(document, ms);
+            document.Open();
 
-            try
+            var fontBold = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 10, BaseColor.BLACK);
+            var fontNormal = FontFactory.GetFont(FontFactory.HELVETICA, 10, BaseColor.BLACK);
+            var fontTitle = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 18, BaseColor.BLACK);
+            var fontSubtitle = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 14, BaseColor.BLACK);
+            var fontSectionTitle = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 12, BaseColor.BLACK);
+
+            // Encabezado
+            var titulo = new Paragraph("SISTEMA BANCA EN LINEA", fontTitle)
             {
-                var fontBold = PdfFontFactory.CreateFont(StandardFonts.HELVETICA_BOLD);
-                var fontNormal = PdfFontFactory.CreateFont(StandardFonts.HELVETICA);
+                Alignment = Element.ALIGN_CENTER,
+                SpacingAfter = 10
+            };
+            document.Add(titulo);
 
-                // Encabezado
-                document.Add(new Paragraph("SISTEMA BANCA EN LINEA")
-                    .SetFont(fontBold)
-                    .SetFontSize(18)
-                    .SetTextAlignment(TextAlignment.CENTER));
+            var subtitulo = new Paragraph("Resumen de Cliente", fontSubtitle)
+            {
+                Alignment = Element.ALIGN_CENTER,
+                SpacingAfter = 20
+            };
+            document.Add(subtitulo);
 
-                document.Add(new Paragraph("Resumen de Cliente")
-                    .SetFont(fontBold)
-                    .SetFontSize(14)
-                    .SetTextAlignment(TextAlignment.CENTER)
-                    .SetMarginBottom(20));
+            // Información del cliente
+            var clienteSectionTitle = new Paragraph("INFORMACION DEL CLIENTE", fontSectionTitle)
+            {
+                SpacingAfter = 10
+            };
+            document.Add(clienteSectionTitle);
 
-                // Información del cliente
-                document.Add(new Paragraph("INFORMACION DEL CLIENTE")
-                    .SetFont(fontBold)
-                    .SetFontSize(12)
-                    .SetMarginBottom(10));
+            var infoTable = new PdfPTable(2) { WidthPercentage = 100, SpacingAfter = 10 };
+            infoTable.AddCell(new PdfPCell(new Phrase("Nombre:", fontBold)) { Border = 0, Padding = 3 });
+            infoTable.AddCell(new PdfPCell(new Phrase(resumen.Cliente.Nombre ?? "N/A", fontNormal)) { Border = 0, Padding = 3 });
+            infoTable.AddCell(new PdfPCell(new Phrase("Identificacion:", fontBold)) { Border = 0, Padding = 3 });
+            infoTable.AddCell(new PdfPCell(new Phrase(resumen.Cliente.Identificacion ?? "N/A", fontNormal)) { Border = 0, Padding = 3 });
+            infoTable.AddCell(new PdfPCell(new Phrase("Correo:", fontBold)) { Border = 0, Padding = 3 });
+            infoTable.AddCell(new PdfPCell(new Phrase(resumen.Cliente.Correo ?? "N/A", fontNormal)) { Border = 0, Padding = 3 });
+            infoTable.AddCell(new PdfPCell(new Phrase("Telefono:", fontBold)) { Border = 0, Padding = 3 });
+            infoTable.AddCell(new PdfPCell(new Phrase(resumen.Cliente.Telefono ?? "N/A", fontNormal)) { Border = 0, Padding = 3 });
+            infoTable.AddCell(new PdfPCell(new Phrase("Fecha Registro:", fontBold)) { Border = 0, Padding = 3 });
+            infoTable.AddCell(new PdfPCell(new Phrase(resumen.Cliente.FechaRegistro.ToString("dd/MM/yyyy"), fontNormal)) { Border = 0, Padding = 3 });
+            document.Add(infoTable);
 
-                var infoTable = new Table(2).UseAllAvailableWidth();
-                infoTable.AddCell(CrearCeldaInfo("Nombre:", fontBold));
-                infoTable.AddCell(CrearCeldaInfo(resumen.Cliente.Nombre ?? "N/A", fontNormal));
-                infoTable.AddCell(CrearCeldaInfo("Identificacion:", fontBold));
-                infoTable.AddCell(CrearCeldaInfo(resumen.Cliente.Identificacion ?? "N/A", fontNormal));
-                infoTable.AddCell(CrearCeldaInfo("Correo:", fontBold));
-                infoTable.AddCell(CrearCeldaInfo(resumen.Cliente.Correo ?? "N/A", fontNormal));
-                infoTable.AddCell(CrearCeldaInfo("Telefono:", fontBold));
-                infoTable.AddCell(CrearCeldaInfo(resumen.Cliente.Telefono ?? "N/A", fontNormal));
-                infoTable.AddCell(CrearCeldaInfo("Fecha Registro:", fontBold));
-                infoTable.AddCell(CrearCeldaInfo(resumen.Cliente.FechaRegistro.ToString("dd/MM/yyyy"), fontNormal));
-                document.Add(infoTable);
+            // Resumen de cuentas
+            var cuentasSectionTitle = new Paragraph("RESUMEN DE CUENTAS", fontSectionTitle)
+            {
+                SpacingBefore = 20,
+                SpacingAfter = 10
+            };
+            document.Add(cuentasSectionTitle);
 
-                // Resumen de cuentas
-                document.Add(new Paragraph("RESUMEN DE CUENTAS")
-                    .SetFont(fontBold)
-                    .SetFontSize(12)
-                    .SetMarginTop(20)
-                    .SetMarginBottom(10));
+            var cuentasResumen = new PdfPTable(2) { WidthPercentage = 100, SpacingAfter = 10 };
+            cuentasResumen.AddCell(new PdfPCell(new Phrase("Total Cuentas:", fontBold)) { Border = 0, Padding = 3 });
+            cuentasResumen.AddCell(new PdfPCell(new Phrase(resumen.Cuentas.Total.ToString(), fontNormal)) { Border = 0, Padding = 3 });
+            cuentasResumen.AddCell(new PdfPCell(new Phrase("Cuentas Activas:", fontBold)) { Border = 0, Padding = 3 });
+            cuentasResumen.AddCell(new PdfPCell(new Phrase(resumen.Cuentas.Activas.ToString(), fontNormal)) { Border = 0, Padding = 3 });
+            cuentasResumen.AddCell(new PdfPCell(new Phrase("Saldo Total CRC:", fontBold)) { Border = 0, Padding = 3 });
+            cuentasResumen.AddCell(new PdfPCell(new Phrase($"CRC {resumen.Cuentas.SaldoTotalCRC:N2}", fontNormal)) { Border = 0, Padding = 3 });
+            cuentasResumen.AddCell(new PdfPCell(new Phrase("Saldo Total USD:", fontBold)) { Border = 0, Padding = 3 });
+            cuentasResumen.AddCell(new PdfPCell(new Phrase($"USD {resumen.Cuentas.SaldoTotalUSD:N2}", fontNormal)) { Border = 0, Padding = 3 });
+            document.Add(cuentasResumen);
 
-                var cuentasResumen = new Table(2).UseAllAvailableWidth();
-                cuentasResumen.AddCell(CrearCeldaInfo("Total Cuentas:", fontBold));
-                cuentasResumen.AddCell(CrearCeldaInfo(resumen.Cuentas.Total.ToString(), fontNormal));
-                cuentasResumen.AddCell(CrearCeldaInfo("Cuentas Activas:", fontBold));
-                cuentasResumen.AddCell(CrearCeldaInfo(resumen.Cuentas.Activas.ToString(), fontNormal));
-                cuentasResumen.AddCell(CrearCeldaInfo("Saldo Total CRC:", fontBold));
-                cuentasResumen.AddCell(CrearCeldaInfo($"CRC {resumen.Cuentas.SaldoTotalCRC:N2}", fontNormal));
-                cuentasResumen.AddCell(CrearCeldaInfo("Saldo Total USD:", fontBold));
-                cuentasResumen.AddCell(CrearCeldaInfo($"USD {resumen.Cuentas.SaldoTotalUSD:N2}", fontNormal));
-                document.Add(cuentasResumen);
-
-                // Detalle de cuentas
-                if (resumen.Cuentas.Detalle.Count > 0)
+            // Detalle de cuentas
+            if (resumen.Cuentas.Detalle.Count > 0)
+            {
+                var detalleTitle = new Paragraph("Detalle de Cuentas:", fontBold)
                 {
-                    document.Add(new Paragraph("Detalle de Cuentas:")
-                        .SetFont(fontBold)
-                        .SetFontSize(10)
-                        .SetMarginTop(10));
+                    SpacingBefore = 10,
+                    SpacingAfter = 5
+                };
+                document.Add(detalleTitle);
 
-                    var cuentasTable = new Table(new float[] { 3, 2, 1, 2, 2 }).UseAllAvailableWidth();
-                    cuentasTable.AddHeaderCell(CrearCeldaEncabezado("Numero", fontBold));
-                    cuentasTable.AddHeaderCell(CrearCeldaEncabezado("Tipo", fontBold));
-                    cuentasTable.AddHeaderCell(CrearCeldaEncabezado("Moneda", fontBold));
-                    cuentasTable.AddHeaderCell(CrearCeldaEncabezado("Saldo", fontBold));
-                    cuentasTable.AddHeaderCell(CrearCeldaEncabezado("Estado", fontBold));
+                var cuentasTable = new PdfPTable(5) { WidthPercentage = 100, SpacingAfter = 10 };
+                cuentasTable.SetWidths(new float[] { 3, 2, 1, 2, 2 });
 
-                    foreach (var cuenta in resumen.Cuentas.Detalle)
-                    {
-                        cuentasTable.AddCell(CrearCeldaDato(cuenta.Numero ?? "-", fontNormal));
-                        cuentasTable.AddCell(CrearCeldaDato(cuenta.Tipo ?? "-", fontNormal));
-                        cuentasTable.AddCell(CrearCeldaDato(cuenta.Moneda ?? "-", fontNormal));
-                        cuentasTable.AddCell(CrearCeldaDato($"{cuenta.Saldo:N2}", fontNormal));
-                        cuentasTable.AddCell(CrearCeldaDato(cuenta.Estado ?? "-", fontNormal));
-                    }
+                var headerBg = new BaseColor(41, 128, 185);
+                var fontHeader = FontFactory.GetFont(FontFactory.HELVETICA_BOLD, 9, BaseColor.WHITE);
 
-                    document.Add(cuentasTable);
+                cuentasTable.AddCell(new PdfPCell(new Phrase("Numero", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+                cuentasTable.AddCell(new PdfPCell(new Phrase("Tipo", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+                cuentasTable.AddCell(new PdfPCell(new Phrase("Moneda", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+                cuentasTable.AddCell(new PdfPCell(new Phrase("Saldo", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+                cuentasTable.AddCell(new PdfPCell(new Phrase("Estado", fontHeader)) { BackgroundColor = headerBg, HorizontalAlignment = Element.ALIGN_CENTER, Padding = 5 });
+
+                var fontSmall = FontFactory.GetFont(FontFactory.HELVETICA, 8, BaseColor.BLACK);
+
+                foreach (var cuenta in resumen.Cuentas.Detalle)
+                {
+                    cuentasTable.AddCell(new PdfPCell(new Phrase(cuenta.Numero ?? "-", fontSmall)) { Padding = 3 });
+                    cuentasTable.AddCell(new PdfPCell(new Phrase(cuenta.Tipo ?? "-", fontSmall)) { Padding = 3 });
+                    cuentasTable.AddCell(new PdfPCell(new Phrase(cuenta.Moneda ?? "-", fontSmall)) { Padding = 3 });
+                    cuentasTable.AddCell(new PdfPCell(new Phrase($"{cuenta.Saldo:N2}", fontSmall)) { Padding = 3 });
+                    cuentasTable.AddCell(new PdfPCell(new Phrase(cuenta.Estado ?? "-", fontSmall)) { Padding = 3 });
                 }
 
-                // Actividad
-                document.Add(new Paragraph("ACTIVIDAD RECIENTE")
-                    .SetFont(fontBold)
-                    .SetFontSize(12)
-                    .SetMarginTop(20)
-                    .SetMarginBottom(10));
-
-                var actividadTable = new Table(2).UseAllAvailableWidth();
-                actividadTable.AddCell(CrearCeldaInfo("Total Transacciones:", fontBold));
-                actividadTable.AddCell(CrearCeldaInfo(resumen.Actividad.TotalTransacciones.ToString(), fontNormal));
-                actividadTable.AddCell(CrearCeldaInfo("Transacciones Ultimo Mes:", fontBold));
-                actividadTable.AddCell(CrearCeldaInfo(resumen.Actividad.TransaccionesUltimoMes.ToString(), fontNormal));
-                actividadTable.AddCell(CrearCeldaInfo("Monto Transferido (Mes):", fontBold));
-                actividadTable.AddCell(CrearCeldaInfo($"{resumen.Actividad.MontoTransferidoMes:N2}", fontNormal));
-                actividadTable.AddCell(CrearCeldaInfo("Ultima Transaccion:", fontBold));
-                actividadTable.AddCell(CrearCeldaInfo(resumen.Actividad.UltimaTransaccion?.ToString("dd/MM/yyyy HH:mm") ?? "N/A", fontNormal));
-                document.Add(actividadTable);
-
-                // Pie de página
-                document.Add(new Paragraph($"Generado el {DateTime.Now:dd/MM/yyyy HH:mm:ss}")
-                    .SetFont(fontNormal)
-                    .SetFontSize(8)
-                    .SetTextAlignment(TextAlignment.CENTER)
-                    .SetMarginTop(30));
+                document.Add(cuentasTable);
             }
-            finally
+
+            // Actividad
+            var actividadSectionTitle = new Paragraph("ACTIVIDAD RECIENTE", fontSectionTitle)
             {
-                document.Close();
-            }
+                SpacingBefore = 20,
+                SpacingAfter = 10
+            };
+            document.Add(actividadSectionTitle);
 
+            var actividadTable = new PdfPTable(2) { WidthPercentage = 100, SpacingAfter = 10 };
+            actividadTable.AddCell(new PdfPCell(new Phrase("Total Transacciones:", fontBold)) { Border = 0, Padding = 3 });
+            actividadTable.AddCell(new PdfPCell(new Phrase(resumen.Actividad.TotalTransacciones.ToString(), fontNormal)) { Border = 0, Padding = 3 });
+            actividadTable.AddCell(new PdfPCell(new Phrase("Transacciones Ultimo Mes:", fontBold)) { Border = 0, Padding = 3 });
+            actividadTable.AddCell(new PdfPCell(new Phrase(resumen.Actividad.TransaccionesUltimoMes.ToString(), fontNormal)) { Border = 0, Padding = 3 });
+            actividadTable.AddCell(new PdfPCell(new Phrase("Monto Transferido (Mes):", fontBold)) { Border = 0, Padding = 3 });
+            actividadTable.AddCell(new PdfPCell(new Phrase($"{resumen.Actividad.MontoTransferidoMes:N2}", fontNormal)) { Border = 0, Padding = 3 });
+            actividadTable.AddCell(new PdfPCell(new Phrase("Ultima Transaccion:", fontBold)) { Border = 0, Padding = 3 });
+            actividadTable.AddCell(new PdfPCell(new Phrase(resumen.Actividad.UltimaTransaccion?.ToString("dd/MM/yyyy HH:mm") ?? "N/A", fontNormal)) { Border = 0, Padding = 3 });
+            document.Add(actividadTable);
+
+            // Pie de página
+            var fontFooter = FontFactory.GetFont(FontFactory.HELVETICA, 8, BaseColor.BLACK);
+            var footer = new Paragraph($"Generado el {DateTime.Now:dd/MM/yyyy HH:mm:ss}", fontFooter)
+            {
+                Alignment = Element.ALIGN_CENTER,
+                SpacingBefore = 30
+            };
+            document.Add(footer);
+
+            document.Close();
             return ms.ToArray();
         }
 
@@ -722,43 +732,6 @@ namespace SistemaBancaEnLinea.BW
             }
 
             return new List<Transaccion>();
-        }
-
-        #endregion
-
-        #region Métodos Privados PDF
-
-        private static Cell CrearCeldaInfo(string texto, PdfFont font)
-        {
-            return new Cell()
-                .Add(new Paragraph(texto).SetFont(font).SetFontSize(10))
-                .SetBorder(iText.Layout.Borders.Border.NO_BORDER)
-                .SetPadding(3);
-        }
-
-        private static Cell CrearCeldaResaltada(string texto, PdfFont font)
-        {
-            return new Cell()
-                .Add(new Paragraph(texto).SetFont(font).SetFontSize(10))
-                .SetBackgroundColor(new DeviceRgb(240, 240, 240))
-                .SetPadding(5);
-        }
-
-        private static Cell CrearCeldaEncabezado(string texto, PdfFont font)
-        {
-            return new Cell()
-                .Add(new Paragraph(texto).SetFont(font).SetFontSize(9))
-                .SetBackgroundColor(new DeviceRgb(41, 128, 185))
-                .SetFontColor(ColorConstants.WHITE)
-                .SetTextAlignment(TextAlignment.CENTER)
-                .SetPadding(5);
-        }
-
-        private static Cell CrearCeldaDato(string texto, PdfFont font)
-        {
-            return new Cell()
-                .Add(new Paragraph(texto).SetFont(font).SetFontSize(8))
-                .SetPadding(3);
         }
 
         #endregion
