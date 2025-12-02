@@ -17,6 +17,8 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
 
         Task<byte[]?> GenerarResumenParaUsuarioAsync(int usuarioId, string format);
 
+        Task<ResumenClienteDto> GenerarResumenParaUsuarioJsonAsync(int usuarioId);
+
         Task<object> GenerarReporteTransaccionesAsync(
             DateTime inicio, DateTime fin, string? tipo, string? estado, int? clienteId, int usuarioId, string rol);
 

@@ -69,14 +69,17 @@ namespace SistemaBancaEnLinea.API.Controllers
             try
             {
                 var usuarioId = GetCurrentUserId();
-                var archivo = await _reportesServicio.GenerarResumenParaUsuarioAsync(usuarioId, format);
 
-                if (archivo != null)
-                    return File(archivo, "application/pdf", $"resumen_{DateTime.Now:yyyyMMdd}.pdf");
+                if (format.ToLower() == "pdf")
+                {
+                    var archivo = await _reportesServicio.GenerarResumenParaUsuarioAsync(usuarioId, format);
+                    if (archivo != null)
+                        return File(archivo, "application/pdf", $"resumen_{DateTime.Now:yyyyMMdd}.pdf");
+                }
 
-                // Si no es PDF, obtener clienteId y generar JSON
-                var cliente = await _reportesServicio.GenerarResumenParaUsuarioAsync(usuarioId, "json");
-                return Ok(ApiResponse.Fail("Formato no soportado para resumen JSON. Use format=pdf"));
+                // Para JSON, obtener el resumen del cliente
+                var resumen = await _reportesServicio.GenerarResumenParaUsuarioJsonAsync(usuarioId);
+                return Ok(ApiResponse<ResumenClienteDto>.Ok(resumen));
             }
             catch (InvalidOperationException ex)
             {
