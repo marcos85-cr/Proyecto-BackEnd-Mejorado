@@ -306,7 +306,7 @@ namespace SistemaBancaEnLinea.BW
         /// - No puede aprobar operaciones por encima del límite de autorización
         /// - Requiere validación previa del cliente o gestor
         /// </summary>
-        public async Task<Transaccion> AprobarTransaccionAsync(int transaccionId, int aprobadorId)
+        public async Task<Transaccion> AprobarTransaccionAsync(int transaccionId, int aprobadorId, string rolAprobador)
         {
             var transaccion = await _transaccionAcciones.ObtenerPorIdAsync(transaccionId);
             if (transaccion == null)
@@ -315,9 +315,22 @@ namespace SistemaBancaEnLinea.BW
             if (transaccion.Estado != "PendienteAprobacion")
                 throw new InvalidOperationException("La transacción no está pendiente de aprobación.");
 
-            // Validar límite de autorización del administrador
-            if (TransferenciasReglas.ExcedeLimiteAutorizacionAdmin(transaccion.Monto))
-                throw new InvalidOperationException($"El monto excede el límite de autorización ({TransferenciasReglas.LIMITE_AUTORIZACION_ADMIN:N0}). Requiere autorización superior.");
+            // Validar límite de autorización según el rol
+            if (rolAprobador == "Gestor")
+            {
+                var validacion = TransferenciasReglas.ValidarAprobacionGestor(transaccion.Monto);
+                if (!validacion.EsValido)
+                    throw new InvalidOperationException(validacion.Error!);
+            }
+            else if (rolAprobador == "Administrador")
+            {
+                if (TransferenciasReglas.ExcedeLimiteAutorizacionAdmin(transaccion.Monto))
+                    throw new InvalidOperationException($"El monto excede el límite de autorización ({TransferenciasReglas.LIMITE_AUTORIZACION_ADMIN:N0}). Requiere autorización superior.");
+            }
+            else
+            {
+                throw new InvalidOperationException("Rol no autorizado para aprobar transacciones.");
+            }
 
             // Validar que existe validación previa (el cliente creó la transacción = validación implícita)
             // La transacción solo puede estar en PendienteAprobacion si fue creada por el cliente/gestor

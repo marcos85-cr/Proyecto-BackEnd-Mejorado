@@ -25,7 +25,7 @@
   
         public static bool RequiereAprobacion(decimal monto)
         {
-            return monto > UMBRAL_APROBACION;
+            return monto >= UMBRAL_APROBACION;
         }
 
         public static bool EsMontoValido(decimal monto)

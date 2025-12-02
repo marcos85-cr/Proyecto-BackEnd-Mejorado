@@ -429,7 +429,7 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (!validacion.EsValido)
                     return BadRequest(ApiResponse.Fail(validacion.Error!));
 
-                var aprobada = await _transferenciasServicio.AprobarTransaccionAsync(operacionId, gestorId);
+                var aprobada = await _transferenciasServicio.AprobarTransaccionAsync(operacionId, gestorId, "Gestor");
 
                 await _auditoriaServicio.RegistrarAsync(gestorId, "AprobacionOperacion",
                     $"Operación {operacionId} aprobada por {operacion.Moneda} {operacion.Monto}");

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authorization;
 using AutoMapper;
 using SistemaBancaEnLinea.BW.Interfaces.BW;
 using SistemaBancaEnLinea.BC.Modelos.DTOs;
+using SistemaBancaEnLinea.BC.ReglasDeNegocio;
 
 namespace SistemaBancaEnLinea.API.Controllers
 {
@@ -82,6 +83,45 @@ namespace SistemaBancaEnLinea.API.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error obteniendo stats del dashboard admin");
+                return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
+            }
+        }
+
+        [HttpGet("operaciones")]
+        public async Task<IActionResult> GetOperaciones()
+        {
+            try
+            {
+                var clientes = await _clienteServicio.ObtenerTodosAsync();
+                var clienteIds = clientes.Select(c => c.Id).ToList();
+
+                if (clienteIds.Count == 0)
+                    return Ok(ApiResponse<IEnumerable<OperacionPendienteDto>>.Ok(new List<OperacionPendienteDto>()));
+
+                // Obtener TODAS las operaciones (sin filtrar por estado)
+                var operaciones = await _transferenciasServicio.ObtenerOperacionesPorClientesAsync(clienteIds);
+
+                var dtos = operaciones.Select(op => new OperacionPendienteDto(
+                    op.Id,
+                    op.ClienteId,
+                    op.Cliente?.UsuarioAsociado?.Nombre ?? "N/A",
+                    op.Tipo,
+                    op.Descripcion,
+                    op.Monto,
+                    op.Moneda,
+                    op.Comision,
+                    op.Estado,
+                    op.FechaCreacion,
+                    op.CuentaOrigen?.Numero,
+                    op.CuentaDestino?.Numero,
+                    op.Monto <= TransferenciasReglas.LIMITE_AUTORIZACION_ADMIN,
+                    op.Monto > TransferenciasReglas.UMBRAL_APROBACION));
+
+                return Ok(ApiResponse<IEnumerable<OperacionPendienteDto>>.Ok(dtos));
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo operaciones");
                 return StatusCode(500, ApiResponse.Fail("Error interno del servidor"));
             }
         }

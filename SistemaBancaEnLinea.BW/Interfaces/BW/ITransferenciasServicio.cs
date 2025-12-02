@@ -11,7 +11,7 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
         Task<List<Transaccion>> ObtenerMisTransaccionesAsync(int clienteId);
         Task<Transaccion?> ObtenerTransaccionAsync(int id);
         Task<byte[]> DescargarComprobanteAsync(int transaccionId);
-        Task<Transaccion> AprobarTransaccionAsync(int transaccionId, int aprobadorId);
+        Task<Transaccion> AprobarTransaccionAsync(int transaccionId, int aprobadorId, string rolAprobador);
         Task<Transaccion> RechazarTransaccionAsync(int transaccionId, int aprobadorId, string razon);
 
         // Métodos para Gestor

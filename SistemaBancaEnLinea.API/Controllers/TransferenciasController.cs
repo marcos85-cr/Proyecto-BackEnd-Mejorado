@@ -235,13 +235,15 @@ namespace SistemaBancaEnLinea.API.Controllers
         }
 
         [HttpPut("{id}/aprobar")]
-        [Authorize(Roles = "Administrador")]
+        [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> AprobarTransferencia(int id)
         {
             try
             {
                 var aprobadorId = GetUsuarioId();
-                var transaccion = await _transferenciasServicio.AprobarTransaccionAsync(id, aprobadorId);
+                var rolAprobador = User.IsInRole("Administrador") ? "Administrador" : "Gestor";
+
+                var transaccion = await _transferenciasServicio.AprobarTransaccionAsync(id, aprobadorId, rolAprobador);
 
                 var dto = new TransferenciaEstadoDto(transaccion.Id, transaccion.Estado);
 
@@ -259,7 +261,7 @@ namespace SistemaBancaEnLinea.API.Controllers
         }
 
         [HttpPut("{id}/rechazar")]
-        [Authorize(Roles = "Administrador")]
+        [Authorize(Roles = "Administrador,Gestor")]
         public async Task<IActionResult> RechazarTransferencia(int id, [FromBody] RechazarTransferenciaRequest request)
         {
             try
