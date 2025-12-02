@@ -191,7 +191,7 @@ namespace SistemaBancaEnLinea.BW
                     Moneda = request.Moneda,
                     Comision = 0,
                     IdempotencyKey = request.IdempotencyKey,
-                    FechaCreacion = DateTime.UtcNow,
+                    FechaCreacion = DateTime.Now,
                     SaldoAnterior = preCheck.SaldoAntes,
                     SaldoPosterior = preCheck.SaldoDespues,
                     CuentaOrigenId = request.CuentaOrigenId,

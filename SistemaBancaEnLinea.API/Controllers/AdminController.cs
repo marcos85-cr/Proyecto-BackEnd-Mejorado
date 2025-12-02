@@ -244,14 +244,15 @@ namespace SistemaBancaEnLinea.API.Controllers
 
         [HttpGet("auditoria")]
         public async Task<IActionResult> ObtenerAuditoria(
-            [FromQuery] DateTime? fechaInicio,
-            [FromQuery] DateTime? fechaFin,
+            [FromQuery] DateOnly? fechaInicio,
+            [FromQuery] DateOnly? fechaFin,
             [FromQuery] string? tipoOperacion)
         {
             try
             {
-                var inicio = fechaInicio ?? DateTime.UtcNow.AddDays(-30);
-                var fin = fechaFin ?? DateTime.UtcNow;
+                // Convertir DateOnly a DateTime para el filtro
+                var inicio = fechaInicio?.ToDateTime(TimeOnly.MinValue) ?? DateTime.UtcNow.AddDays(-30).Date;
+                var fin = fechaFin?.ToDateTime(TimeOnly.MaxValue) ?? DateTime.UtcNow.Date.AddDays(1).AddTicks(-1);
                 var currentAdminId = GetCurrentUserId();
 
                 var registros = await _auditoriaServicio.ObtenerPorFechasAsync(inicio, fin, tipoOperacion);
