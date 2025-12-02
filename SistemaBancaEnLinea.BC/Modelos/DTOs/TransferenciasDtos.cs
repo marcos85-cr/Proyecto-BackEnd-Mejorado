@@ -63,7 +63,10 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
         string? Descripcion,
         string? ComprobanteReferencia,
         DateTime FechaCreacion,
-        DateTime? FechaEjecucion);
+        DateTime? FechaEjecucion,
+        string? CuentaOrigenNumero,
+        string? CuentaDestinoNumero,
+        string TipoMovimiento); // "Entrada" o "Salida"
 
     public record TransferenciaHistorialDto(
         int Id,

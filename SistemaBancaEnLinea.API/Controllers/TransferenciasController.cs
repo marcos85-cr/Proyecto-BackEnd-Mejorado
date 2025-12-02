@@ -188,9 +188,22 @@ namespace SistemaBancaEnLinea.API.Controllers
 
                 var transacciones = await _transferenciasServicio.ObtenerMisTransaccionesAsync(clienteId);
 
-                var dtos = transacciones.Select(t => new TransferenciaTransaccionListaDto(
-                    t.Id, t.Tipo, t.Estado, t.Monto, t.Moneda, t.Comision,
-                    t.Descripcion, t.ComprobanteReferencia, t.FechaCreacion, t.FechaEjecucion));
+                // Obtener IDs de las cuentas del cliente
+                var misCuentas = await _cuentaServicio.ObtenerMisCuentasAsync(clienteId);
+                var misCuentasIds = misCuentas.Select(c => c.Id).ToHashSet();
+
+                var dtos = transacciones.Select(t =>
+                {
+                    // Determinar si es entrada o salida
+                    var esEntrada = t.CuentaDestinoId.HasValue && misCuentasIds.Contains(t.CuentaDestinoId.Value)
+                                    && t.ClienteId != clienteId;
+                    var tipoMovimiento = esEntrada ? "Entrada" : "Salida";
+
+                    return new TransferenciaTransaccionListaDto(
+                        t.Id, t.Tipo, t.Estado, t.Monto, t.Moneda, t.Comision,
+                        t.Descripcion, t.ComprobanteReferencia, t.FechaCreacion, t.FechaEjecucion,
+                        t.CuentaOrigen?.Numero, t.CuentaDestino?.Numero, tipoMovimiento);
+                });
 
                 return Ok(ApiResponse<IEnumerable<TransferenciaTransaccionListaDto>>.Ok(dtos));
             }
