@@ -173,8 +173,9 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
                 var fin = endDate ?? DateTime.UtcNow;
                 var usuarioId = GetCurrentUserId();
+                var rol = GetUserRole();
 
-                var reporte = await _reportesServicio.GenerarVolumenDiarioAsync(inicio, fin, usuarioId);
+                var reporte = await _reportesServicio.GenerarVolumenDiarioAsync(inicio, fin, usuarioId, rol);
                 return Ok(reporte);
             }
             catch (Exception ex)
@@ -199,8 +200,9 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
                 var fin = endDate ?? DateTime.UtcNow;
                 var usuarioId = GetCurrentUserId();
+                var rol = GetUserRole();
 
-                var reporte = await _reportesServicio.GenerarClientesMasActivosAsync(inicio, fin, top, usuarioId);
+                var reporte = await _reportesServicio.GenerarClientesMasActivosAsync(inicio, fin, top, usuarioId, rol);
                 return Ok(reporte);
             }
             catch (Exception ex)
@@ -224,8 +226,9 @@ namespace SistemaBancaEnLinea.API.Controllers
                 var inicio = startDate ?? DateTime.UtcNow.AddMonths(-1);
                 var fin = endDate ?? DateTime.UtcNow;
                 var usuarioId = GetCurrentUserId();
+                var rol = GetUserRole();
 
-                var totales = await _reportesServicio.GenerarTotalesPorPeriodoAsync(inicio, fin, usuarioId);
+                var totales = await _reportesServicio.GenerarTotalesPorPeriodoAsync(inicio, fin, usuarioId, rol);
                 return Ok(ApiResponse<object>.Ok(totales));
             }
             catch (Exception ex)

@@ -22,10 +22,10 @@ namespace SistemaBancaEnLinea.BW.Interfaces.BW
 
         Task<object> GenerarEstadisticasDashboardAsync();
 
-        Task<object> GenerarVolumenDiarioAsync(DateTime inicio, DateTime fin, int usuarioId);
+        Task<object> GenerarVolumenDiarioAsync(DateTime inicio, DateTime fin, int usuarioId, string rol);
 
-        Task<object> GenerarClientesMasActivosAsync(DateTime inicio, DateTime fin, int top, int usuarioId);
+        Task<object> GenerarClientesMasActivosAsync(DateTime inicio, DateTime fin, int top, int usuarioId, string rol);
 
-        Task<object> GenerarTotalesPorPeriodoAsync(DateTime inicio, DateTime fin, int usuarioId);
+        Task<object> GenerarTotalesPorPeriodoAsync(DateTime inicio, DateTime fin, int usuarioId, string rol);
     }
 }

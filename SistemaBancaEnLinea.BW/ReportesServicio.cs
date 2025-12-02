@@ -446,26 +446,8 @@ namespace SistemaBancaEnLinea.BW
             }
             else
             {
-                if (rol == "Gestor")
-                {
-                    // Obtener transacciones de clientes del gestor
-                    var clientesGestor = await _context.Clientes
-                        .Where(c => c.GestorAsignado != null && c.GestorAsignado.Id == usuarioId)
-                        .Select(c => c.Id)
-                        .ToListAsync();
-
-                    transacciones = new List<Transaccion>();
-                    foreach (var cId in clientesGestor)
-                    {
-                        var trans = await _transaccionAcciones.FiltrarHistorialAsync(
-                            cId, null, inicio, fin, tipo, estado);
-                        transacciones.AddRange(trans);
-                    }
-                }
-                else
-                {
-                    transacciones = new List<Transaccion>();
-                }
+                // Obtener transacciones según el rol
+                transacciones = await ObtenerTransaccionesPorRolAsync(usuarioId, rol, inicio, fin);
             }
 
             // Aplicar filtros adicionales
@@ -540,9 +522,9 @@ namespace SistemaBancaEnLinea.BW
         /// <summary>
         /// Genera reporte de volumen de transacciones diarias
         /// </summary>
-        public async Task<object> GenerarVolumenDiarioAsync(DateTime inicio, DateTime fin, int usuarioId)
+        public async Task<object> GenerarVolumenDiarioAsync(DateTime inicio, DateTime fin, int usuarioId, string rol)
         {
-            var transacciones = await ObtenerTransaccionesGestorAsync(usuarioId, inicio, fin);
+            var transacciones = await ObtenerTransaccionesPorRolAsync(usuarioId, rol, inicio, fin);
 
             var volumenDiario = transacciones
                 .Where(t => t.Estado == "Exitosa")
@@ -581,9 +563,9 @@ namespace SistemaBancaEnLinea.BW
         /// <summary>
         /// Genera reporte de clientes más activos
         /// </summary>
-        public async Task<object> GenerarClientesMasActivosAsync(DateTime inicio, DateTime fin, int top, int usuarioId)
+        public async Task<object> GenerarClientesMasActivosAsync(DateTime inicio, DateTime fin, int top, int usuarioId, string rol)
         {
-            var transacciones = await ObtenerTransaccionesGestorAsync(usuarioId, inicio, fin);
+            var transacciones = await ObtenerTransaccionesPorRolAsync(usuarioId, rol, inicio, fin);
 
             var clientesActivos = transacciones
                 .Where(t => t.Cliente != null)
@@ -623,9 +605,9 @@ namespace SistemaBancaEnLinea.BW
         /// <summary>
         /// Genera reporte de totales por período
         /// </summary>
-        public async Task<object> GenerarTotalesPorPeriodoAsync(DateTime inicio, DateTime fin, int usuarioId)
+        public async Task<object> GenerarTotalesPorPeriodoAsync(DateTime inicio, DateTime fin, int usuarioId, string rol)
         {
-            var transacciones = await ObtenerTransaccionesGestorAsync(usuarioId, inicio, fin);
+            var transacciones = await ObtenerTransaccionesPorRolAsync(usuarioId, rol, inicio, fin);
 
             var totales = new
             {
@@ -673,22 +655,40 @@ namespace SistemaBancaEnLinea.BW
             return cliente != null && cliente.Id == cuentaClienteId;
         }
 
-        private async Task<List<Transaccion>> ObtenerTransaccionesGestorAsync(int usuarioId, DateTime inicio, DateTime fin)
+        private async Task<List<Transaccion>> ObtenerTransaccionesPorRolAsync(int usuarioId, string rol, DateTime inicio, DateTime fin)
         {
-            var clientesGestor = await _context.Clientes
-                .Where(c => c.GestorAsignado != null && c.GestorAsignado.Id == usuarioId)
-                .Select(c => c.Id)
-                .ToListAsync();
-
-            var transacciones = new List<Transaccion>();
-            foreach (var clienteId in clientesGestor)
+            if (rol == "Administrador")
             {
-                var trans = await _transaccionAcciones.FiltrarHistorialAsync(
-                    clienteId, null, inicio, fin, null, null);
-                transacciones.AddRange(trans);
+                // Administrador ve TODAS las transacciones del sistema
+                return await _context.Transacciones
+                    .Include(t => t.Cliente)
+                        .ThenInclude(c => c!.UsuarioAsociado)
+                    .Include(t => t.CuentaOrigen)
+                    .Include(t => t.CuentaDestino)
+                    .Where(t => t.FechaCreacion >= inicio && t.FechaCreacion <= fin)
+                    .OrderByDescending(t => t.FechaCreacion)
+                    .ToListAsync();
+            }
+            else if (rol == "Gestor")
+            {
+                // Gestor ve transacciones de sus clientes asignados
+                var clientesGestor = await _context.Clientes
+                    .Where(c => c.GestorAsignado != null && c.GestorAsignado.Id == usuarioId)
+                    .Select(c => c.Id)
+                    .ToListAsync();
+
+                return await _context.Transacciones
+                    .Include(t => t.Cliente)
+                        .ThenInclude(c => c!.UsuarioAsociado)
+                    .Include(t => t.CuentaOrigen)
+                    .Include(t => t.CuentaDestino)
+                    .Where(t => clientesGestor.Contains(t.ClienteId) &&
+                                t.FechaCreacion >= inicio && t.FechaCreacion <= fin)
+                    .OrderByDescending(t => t.FechaCreacion)
+                    .ToListAsync();
             }
 
-            return transacciones;
+            return new List<Transaccion>();
         }
 
         #endregion
