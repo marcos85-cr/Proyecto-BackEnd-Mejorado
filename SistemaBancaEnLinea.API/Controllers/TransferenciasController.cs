@@ -12,15 +12,18 @@ namespace SistemaBancaEnLinea.API.Controllers
     {
         private readonly ITransferenciasServicio _transferenciasServicio;
         private readonly IClienteServicio _clienteServicio;
+        private readonly ICuentaServicio _cuentaServicio;
         private readonly ILogger<TransferenciasController> _logger;
 
         public TransferenciasController(
             ITransferenciasServicio transferenciasServicio,
             IClienteServicio clienteServicio,
+            ICuentaServicio cuentaServicio,
             ILogger<TransferenciasController> logger)
         {
             _transferenciasServicio = transferenciasServicio;
             _clienteServicio = clienteServicio;
+            _cuentaServicio = cuentaServicio;
             _logger = logger;
         }
 
@@ -76,11 +79,30 @@ namespace SistemaBancaEnLinea.API.Controllers
                 if (clienteId == 0)
                     return Unauthorized(ApiResponse<object>.Fail("Cliente no identificado."));
 
+                // Buscar cuenta destino por número
+                int? cuentaDestinoId = null;
+                if (!string.IsNullOrWhiteSpace(request.CuentaDestinoNumero))
+                {
+                    var cuentaDestino = await _cuentaServicio.ObtenerPorNumeroAsync(request.CuentaDestinoNumero);
+                    if (cuentaDestino == null)
+                        return BadRequest(ApiResponse<object>.Fail("La cuenta destino no existe."));
+
+                    // Validar que las monedas coincidan
+                    var cuentaOrigen = await _cuentaServicio.ObtenerCuentaAsync(request.CuentaOrigenId);
+                    if (cuentaOrigen == null)
+                        return BadRequest(ApiResponse<object>.Fail("La cuenta origen no existe."));
+
+                    if (cuentaOrigen.Moneda != cuentaDestino.Moneda)
+                        return BadRequest(ApiResponse<object>.Fail($"Las monedas de las cuentas no coinciden. Cuenta origen: {cuentaOrigen.Moneda}, Cuenta destino: {cuentaDestino.Moneda}"));
+
+                    cuentaDestinoId = cuentaDestino.Id;
+                }
+
                 var transferRequest = new TransferRequest
                 {
                     ClienteId = clienteId,
                     CuentaOrigenId = request.CuentaOrigenId,
-                    CuentaDestinoId = request.CuentaDestinoId,
+                    CuentaDestinoId = cuentaDestinoId,
                     BeneficiarioId = request.BeneficiarioId,
                     Monto = request.Monto,
                     Moneda = request.Moneda,

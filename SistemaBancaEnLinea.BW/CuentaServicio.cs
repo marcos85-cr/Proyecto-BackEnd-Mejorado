@@ -83,6 +83,22 @@ namespace SistemaBancaEnLinea.BW
         }
 
         /// <summary>
+        /// Obtiene una cuenta por su número
+        /// </summary>
+        public async Task<Cuenta?> ObtenerPorNumeroAsync(string numeroCuenta)
+        {
+            try
+            {
+                return await _cuentaAcciones.ObtenerPorNumeroAsync(numeroCuenta);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error obteniendo cuenta por número {NumeroCuenta}", numeroCuenta);
+                throw;
+            }
+        }
+
+        /// <summary>
         /// RF-B1: Crea una nueva cuenta para el cliente
         /// </summary>
         public async Task<Cuenta> CrearCuentaAsync(int clienteId, string tipo, string moneda, decimal saldoInicial)

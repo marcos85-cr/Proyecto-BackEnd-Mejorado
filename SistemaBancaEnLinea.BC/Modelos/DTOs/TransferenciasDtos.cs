@@ -8,7 +8,7 @@ namespace SistemaBancaEnLinea.BC.Modelos.DTOs
 
     public record EjecutarTransferenciaRequest(
         int CuentaOrigenId,
-        int? CuentaDestinoId,
+        string? CuentaDestinoNumero,
         int? BeneficiarioId,
         decimal Monto,
         string Moneda = "CRC",
